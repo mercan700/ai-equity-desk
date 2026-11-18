@@ -8,7 +8,7 @@
     {
       "name": "stock-trader-skills",
       "source": "./",
-      "description": "Stock analysis, scenarios and a portfolio journal for US stocks, using free data checked against SEC filings. Does not place trades. Not investment advice."
+      "description": "Screener, market regime, 13F, insider and Congress trades, fundamentals, technicals with backtests, scenarios and a portfolio journal for US stocks, using free data checked against SEC filings. Does not place trades. Not investment advice."
     }
   ]
 }

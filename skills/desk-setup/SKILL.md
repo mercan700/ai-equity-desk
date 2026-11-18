@@ -1,6 +1,6 @@
 ---
 name: desk-setup
-description: Installs and checks the stock trader skills on this computer. Verifies Python, installs yfinance, pandas and requests, stores the SEC contact user-agent and the default market, and tests each data source. Use before the first analysis, when the user asks to set up or install the desk, when something "doesn't work", or when another desk skill returns a setup error.
+description: Installs and checks the stock trader skills on this computer. Verifies Python, installs yfinance, pandas, requests and pypdf, stores the SEC contact user-agent and the default market, and tests each data source. Use before the first analysis, when the user asks to set up or install the skills, when something "doesn't work", or when another skill returns a setup error.
 ---
 
 # Desk setup

@@ -25,12 +25,23 @@ def _get(url):
     return r
 
 
-def cik_for(ticker):
+def get(url):
+    """A polite GET to any sec.gov address (rate-limited, with the contact User-Agent)."""
+    return _get(url)
+
+
+def ticker_map():
+    """{ticker: [cik, company name]} for every company SEC lists, cached for a month."""
     m = cache.get_json("sec_map", "tickers")
     if m is None:
         raw = _get("https://www.sec.gov/files/company_tickers.json").json()
         m = {v["ticker"].upper(): [str(v["cik_str"]).zfill(10), v["title"]] for v in raw.values()}
         cache.put_json("sec_map", "tickers", m)
+    return m
+
+
+def cik_for(ticker):
+    m = ticker_map()
     t = ticker.upper().replace(".", "-")
     if t not in m:
         raise DeskError(f"'{ticker}' is not in SEC's ticker list (SEC covers US-listed companies only).")

@@ -1,6 +1,6 @@
 ---
 name: portfolio
-description: Keeps the user's portfolio with a reason attached to every position. Records buys and sells, the thesis and the condition that would prove it wrong, and dated notes. Shows weights, gains and performance against the index. Replays five real crashes (2000, 2008, 2018, 2020, 2022) on today's weights. Reviews the user's own trading for habits such as selling winners too early and holding losers, averaging down, concentration, and theses never revisited. Use for "add 10 AAPL at 180", "I sold my Tesla", "show my portfolio", "how would my portfolio do in a crash", "stress test my holdings", "review my trades", "am I too concentrated" or "why do I own X". Built for US stocks; Borsa Istanbul works with --market BIST.
+description: Keeps the user's portfolio with a reason attached to every position. Records buys and sells, the thesis and the condition that would prove it wrong, and dated notes. Shows weights, gains and performance against the index. Replays five real crashes (2000, 2008, 2018, 2020, 2022) on today's weights. Reviews the user's own trading for habits such as selling winners too early and holding losers, averaging down, concentration, and theses never revisited. Before a trade, checks what a planned buy would do to position weight, sector weight and the loss at the stop, against limits the user sets, and works out how many shares fit. Use for "add 10 AAPL at 180", "can I afford to buy 50 NVDA", "how many shares should I buy", "check this trade", "set my risk limits", "I sold my Tesla", "show my portfolio", "how would my portfolio do in a crash", "stress test my holdings", "review my trades", "am I too concentrated" or "why do I own X". Built for US stocks; Borsa Istanbul works with --market BIST.
 ---
 
 # Portfolio
@@ -20,6 +20,9 @@ python scripts/portfolio.py note AAPL --sell-if "services growth under 8% two qu
 python scripts/portfolio.py show
 python scripts/portfolio.py stress
 python scripts/portfolio.py review
+python scripts/portfolio.py check NVDA 40 --stop 135
+python scripts/portfolio.py check NVDA 40 150 --cash 20000
+python scripts/portfolio.py limits --max-position 15 --max-sector 35 --max-risk 0.75
 ```
 
 ## Recording trades
@@ -62,6 +65,27 @@ Start with the flags. Group them by stock, and for each say what to do next, in 
 - Disposition: `share_of_gains_sold` against `share_of_losses_sold`. If gains are sold far more readily, the user is cutting winners and riding losers. This is the most common habit found in studies of individual investors. Under 5 sales, `reads` says "too few sales to tell". Report it that way.
 - Concentration by sector and country.
 - If `scenario_scorecard` is present, add a line on whether their saved scenarios lean optimistic.
+
+## check
+
+Run it when the user is about to buy, or asks how much to buy. It records nothing.
+
+- `--stop` is the price at which the user would sell. Ask for it. Without it the script uses two ATRs below the price as a reference and says so.
+- `--cash` is money already in the account. Without it the buy counts as new money added to the portfolio.
+- `limits` with no options shows the limits. The defaults are 20% in one stock, 40% in one sector and a 1% loss of the portfolio at the stop. Set them only to numbers the user gives.
+
+```
+## Check: <trade>
+<verdict>
+
+| Check | After the buy | Your limit |
+|---|---|---|
+
+Stop at <price> (<distance>% below, <from>). Within all limits: up to <smaller of the two max_shares> shares.
+Moves most like: <most_correlated_holdings>. Earnings on <next_earnings> if it falls in the next two weeks.
+```
+
+When a check is over, give the share count that fits and leave the decision to the user. Never call the trade good or bad.
 
 ## Rules
 

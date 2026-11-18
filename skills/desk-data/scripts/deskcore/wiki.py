@@ -23,7 +23,7 @@ SUFFIXES = re.compile(
 
 # Words that show a search hit is about a business, not a fruit or a drink.
 COMPANY_WORDS = re.compile(
-    r"\b(company|corporation|conglomerate|multinational|manufacturer|retailer|airline|bank|"
+    r"\b(company|corporation|conglomerate|multinational|manufacturer|retailer|airline|carrier|bank|"
     r"holding|group|firm|enterprise|producer|operator|provider|şirket\w*|firma\w*|holding\w*|"
     r"kuruluş\w*|üretici\w*|perakende\w*|banka\w*)\b", re.I)
 

@@ -505,6 +505,126 @@ def _scenario_scorecard():
     return mod.score()["summary"]
 
 
+# ---------- pre-trade check ----------
+
+DEFAULT_LIMITS = {"max_position_pct": 20.0, "max_sector_pct": 40.0, "max_risk_per_trade_pct": 1.0}
+
+
+def get_limits(data=None):
+    return {**DEFAULT_LIMITS, **((data or load()).get("limits") or {})}
+
+
+def set_limits(max_position, max_sector, max_risk):
+    data = load()
+    lim = get_limits(data)
+    for k, v in (("max_position_pct", max_position), ("max_sector_pct", max_sector),
+                 ("max_risk_per_trade_pct", max_risk)):
+        if v is not None:
+            if v <= 0 or v > 100:
+                raise DeskError(f"{k} must be between 0 and 100.")
+            lim[k] = v
+    data["limits"] = lim
+    save(data)
+    return {"limits": lim}
+
+
+def atr_pct(sym, n=14):
+    df = prices.load_history(sym, "1y", "1d")[0].dropna()
+    c = df["Close"]
+    tr = pd.concat([df["High"] - df["Low"], (df["High"] - c.shift()).abs(), (df["Low"] - c.shift()).abs()],
+                   axis=1).max(axis=1)
+    return float(tr.ewm(alpha=1 / n, adjust=False).mean().iloc[-1] / c.iloc[-1])
+
+
+def check(ticker, shares, price, market, stop=None, cash=0.0):
+    """What a planned buy would do to the portfolio, measured against the user's own limits.
+    It only reports; it never records or places anything."""
+    if shares <= 0:
+        raise DeskError("Shares must be positive.")
+    k, mkt = key_for(ticker, market)
+    sym = markets.symbol(ticker, mkt)
+    cur = markets.MARKETS[mkt]["currency"]
+    price = price or float(raw_closes(sym).iloc[-1])
+    data = load()
+    lim = get_limits(data)
+    rows, total = holdings(data) if data["positions"] else ([], 0.0)
+    account = total + (cash or 0)
+    cost = to_usd(shares * price, cur)
+    after = account + cost if not cash else account  # with cash given, the buy is paid from it
+    if cash and cost > cash:
+        raise DeskError(f"The buy costs ${cost:,.0f} but only ${cash:,.0f} of cash was given.")
+    existing = next((r["value_usd"] for r in rows if r["key"] == k), 0.0)
+    try:
+        sector = prices.profile(ticker, mkt).get("sector") or "Unknown"
+    except Exception:  # noqa: BLE001
+        sector = "Unknown"
+    sector_now = sum(r["value_usd"] for r in rows if r["sector"] == sector)
+    weight = (existing + cost) / after * 100
+    sector_w = (sector_now + cost) / after * 100
+
+    atr = atr_pct(sym)
+    ref_stop = stop if stop else price * (1 - 2 * atr)
+    if ref_stop >= price:
+        raise DeskError("The stop must be below the buy price.")
+    rps = price - ref_stop
+    risk = to_usd(shares * rps, cur)
+    risk_pct = risk / after * 100
+    r = lim["max_risk_per_trade_pct"] / 100
+    rps_usd = to_usd(rps, cur)
+    px_usd = to_usd(price, cur)
+    # Shares where a fall to the stop costs exactly the risk limit, and where the position hits its weight limit.
+    base = account
+    by_risk = (r * base / (rps_usd - (0 if cash else r * px_usd))) if rps_usd > (0 if cash else r * px_usd) else None
+    L = lim["max_position_pct"] / 100
+    by_weight = ((L * base - existing) / (px_usd * (1 - L)) if not cash else (L * base - existing) / px_usd)
+    checks = [
+        {"check": "position weight after the buy", "value_pct": _num(weight, 1), "limit_pct": lim["max_position_pct"],
+         "status": "over" if weight > lim["max_position_pct"] else "ok"},
+        {"check": f"sector weight ({sector})", "value_pct": _num(sector_w, 1), "limit_pct": lim["max_sector_pct"],
+         "status": "over" if sector_w > lim["max_sector_pct"] else "ok"},
+        {"check": "loss if the stop is hit, share of the portfolio", "value_pct": _num(risk_pct, 2),
+         "limit_pct": lim["max_risk_per_trade_pct"], "status": "over" if risk_pct > lim["max_risk_per_trade_pct"] else "ok"},
+    ]
+    corr = []
+    if rows:
+        new = closes(sym).pct_change()
+        start = pd.Timestamp(date.today() - timedelta(days=365))
+        for row in rows:
+            if row["key"] == k:
+                continue
+            pair = pd.concat([new, closes(row["symbol"]).pct_change()], axis=1, sort=True).dropna()
+            pair = pair[pair.index >= start]
+            if len(pair) > 100:
+                corr.append({"ticker": row["ticker"], "corr_1y": _num(pair.iloc[:, 0].corr(pair.iloc[:, 1]), 2)})
+        corr.sort(key=lambda x: -(x["corr_1y"] or -1))
+    nxt = None
+    if mkt == "US":
+        try:
+            ed = (prices._yf().Ticker(sym).calendar or {}).get("Earnings Date")
+            nxt = str(ed[0] if isinstance(ed, list) else ed) if ed else None
+        except Exception:  # noqa: BLE001 - optional
+            nxt = None
+    over = [c["check"] for c in checks if c["status"] == "over"]
+    out = {
+        "trade": f"buy {shares:g} {k} at {price:g} {cur}", "cost_usd": _num(cost, 0),
+        "portfolio_usd_after": _num(after, 0), "limits": lim, "checks": checks,
+        "verdict": "within your limits" if not over else f"over {len(over)} of your limits: " + "; ".join(over),
+        "stop": {"price": _num(ref_stop), "from": "you" if stop else "2 x ATR(14) below the price, as a reference",
+                 "distance_pct": _num(rps / price * 100, 1), "atr14_pct": _num(atr * 100, 2)},
+        "max_shares_within_limits": {"by_risk": _num(by_risk, 1) if by_risk else None,
+                                     "by_position_weight": _num(max(by_weight, 0), 1)},
+        "most_correlated_holdings": corr[:3],
+        **({"next_earnings": nxt} if nxt else {}),
+        "notes": ["Portfolio value is today's holdings" + (" plus the cash given." if cash else
+                  "; the buy is treated as new money added. Pass --cash for money already in the account."),
+                  "This check records nothing. Use 'add' after the trade is actually made."],
+    }
+    if not rows:
+        out["notes"].append("The portfolio is empty, so the position would be 100% of it. Pass --cash with the "
+                            "account size for meaningful weights.")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="Portfolio with a thesis journal, stress test and bias review.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -529,12 +649,25 @@ def main():
     p.add_argument("--sell-if", default="")
     for name in ("show", "stress", "review"):
         sub.add_parser(name)
+    p = sub.add_parser("check", help="what a planned buy does to weights and risk; records nothing")
+    p.add_argument("ticker")
+    p.add_argument("shares", type=float)
+    p.add_argument("price", type=float, nargs="?", default=None, help="default: last close")
+    p.add_argument("--market", default=default_market)
+    p.add_argument("--stop", type=float, help="the price at which the user would sell")
+    p.add_argument("--cash", type=float, default=0.0, help="cash in the account, US dollars")
+    p = sub.add_parser("limits", help="show or set position, sector and risk limits")
+    p.add_argument("--max-position", type=float)
+    p.add_argument("--max-sector", type=float)
+    p.add_argument("--max-risk", type=float, help="largest loss per trade at the stop, % of the portfolio")
     a = ap.parse_args()
     actions = {
         "add": lambda: add(a.ticker, a.shares, a.price, a.market, a.date, a.thesis, a.sell_if),
         "sell": lambda: sell(a.ticker, a.shares, a.price, a.market, a.date, a.reason),
         "note": lambda: note(a.ticker, a.text, a.market, a.thesis, a.sell_if),
         "show": show, "stress": stress, "review": review,
+        "check": lambda: check(a.ticker, a.shares, a.price, a.market, a.stop, a.cash),
+        "limits": lambda: set_limits(a.max_position, a.max_sector, a.max_risk),
     }
     return run(actions[a.cmd])
 

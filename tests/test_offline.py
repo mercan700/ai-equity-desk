@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 os.environ["DESK_HOME"] = tempfile.mkdtemp(prefix="desk-test-")
 sys.path.insert(0, str(ROOT / "skills" / "desk-data" / "scripts"))
 
-from deskcore import DeskError, bis, cache, macro, markets, news, prices, returns, verify, wiki  # noqa: E402
+from deskcore import (DeskError, bis, cache, frames, macro, markets, news, prices, returns,  # noqa: E402
+                      universe, verify, wiki)
 from deskcore.cli import friendly_error  # noqa: E402
 
 
@@ -33,6 +34,9 @@ technicals = load_script("skills/technicals/scripts/technicals.py")
 story = load_script("skills/company-story/scripts/story.py")
 scen = load_script("skills/scenarios/scripts/scenarios.py")
 port = load_script("skills/portfolio/scripts/portfolio.py")
+screener = load_script("skills/screener/scripts/screener.py")
+market = load_script("skills/market/scripts/market.py")
+smart = load_script("skills/smart-money/scripts/smartmoney.py")
 
 
 def frame(closes, start="2024-01-02", volume=1_000_000):
@@ -650,6 +654,320 @@ class Portfolio(unittest.TestCase):
         # on the sale day W (cost 10) was at a gain and L (cost 99) at a loss; the sale itself was a gain
         self.assertEqual((d["gains_sold"], d["gains_kept"], d["losses_sold"], d["losses_kept"]), (1, 1, 0, 1))
         self.assertEqual(d["reads"], "too few sales to tell")
+
+
+WIKI_SP500 = """== S&P 500 component stocks ==
+{| class="wikitable sortable" id="constituents"
+|-
+![[Ticker symbol|Symbol]]
+! Security !! GICS Sector !! GICS Sub-Industry
+|-
+|| {{NyseSymbol|MMM}}
+|| [[3M]]
+|| Industrials
+|| Industrial Conglomerates
+|-
+|| {{NyseSymbol|BRK.B}}
+|| [[Berkshire Hathaway|Berkshire Hathaway Inc.]]
+|| Financials
+|| Multi-Sector Holdings
+|}"""
+
+WIKI_SP400 = """{| class="wikitable sortable sticky-header" id="constituents"
+|-
+! style="border-color:inherit;" | [[Symbol]]
+! Security
+|-
+| style="border-color:inherit;" | {{NyseSymbol|AA}}
+| style="border-color:inherit;" | [[Alcoa]]
+| Materials
+| Aluminum
+| [https://www.sec.gov/cgi-bin/browse-edgar?CIK=AA reports]
+|-
+|{{Anchor|A}}{{NasdaqSymbol|AAON}}
+|AAON
+|Industrials
+|Building Products
+|}"""
+
+
+class Universe(unittest.TestCase):
+    def test_both_wikipedia_table_styles(self):
+        a = universe.parse_wiki_table(WIKI_SP500)
+        self.assertEqual([(r["ticker"], r["name"], r["sector"]) for r in a],
+                         [("MMM", "3M", "Industrials"), ("BRK-B", "Berkshire Hathaway Inc.", "Financials")])
+        b = universe.parse_wiki_table(WIKI_SP400)
+        self.assertEqual([(r["ticker"], r["name"], r["sector"], r["industry"]) for r in b],
+                         [("AA", "Alcoa", "Materials", "Aluminum"), ("AAON", "AAON", "Industrials", "Building Products")])
+
+    def test_name_filter(self):
+        self.assertTrue(universe.SKIP_NAME.search("Acme Corp Warrants"))
+        self.assertTrue(universe.SKIP_NAME.search("Bank 6.5% Notes due 2030"))
+        self.assertFalse(universe.SKIP_NAME.search("Bright Horizons Family Solutions"))
+        self.assertFalse(universe.SKIP_NAME.search("United Rentals"))
+
+    def test_price_metrics(self):
+        idx = pd.bdate_range("2024-01-01", periods=300)
+        up = pd.Series(np.linspace(100, 200, 300), index=idx)
+        down = pd.Series(np.linspace(200, 100, 300), index=idx)
+        closes = pd.DataFrame({"UP": up, "DOWN": down})
+        vol = pd.DataFrame({"UP": [1e6] * 295 + [3e6] * 5, "DOWN": [1e6] * 300}, index=idx)
+        m = universe.price_metrics(closes, vol)
+        self.assertGreater(m.at["UP", "vs_sma200"], 0)
+        self.assertLess(m.at["DOWN", "vs_sma200"], 0)
+        self.assertAlmostEqual(m.at["UP", "from_high"], 0)
+        self.assertTrue(m.at["UP", "new_high"])
+        self.assertTrue(m.at["DOWN", "new_low"])
+        self.assertGreater(m.at["UP", "rsi"], 90)
+        self.assertAlmostEqual(m.at["UP", "volume_ratio"], 3e6 / ((45 * 1e6 + 5 * 3e6) / 50))
+        # 12-1 momentum: from 252 sessions back to 21 sessions back
+        self.assertAlmostEqual(m.at["UP", "momentum_12_1"], (up.iloc[-22] / up.iloc[-253] - 1) * 100)
+
+
+class Frames(unittest.TestCase):
+    def test_latest_year(self):
+        from datetime import date
+        self.assertEqual(frames.latest_year(date(2026, 3, 1)), 2024)
+        self.assertEqual(frames.latest_year(date(2026, 5, 1)), 2025)
+
+    def test_metrics(self):
+        f = {"revenue": 1000, "revenue_prev": 800, "net_income": 100, "ocf": 150, "capex": 50,
+             "equity": 400, "long_term_debt": 200, "dividends": 40, "buybacks": 10, "gross_profit": 500}
+        m = frames.metrics(f, 2000)
+        self.assertEqual((m["pe"], m["ps"], m["fcf_yield"], m["revenue_growth"]), (20.0, 2.0, 5.0, 25.0))
+        self.assertEqual((m["roe"], m["debt_to_equity"], m["dividend_yield"], m["shareholder_yield"]),
+                         (25.0, 0.5, 2.0, 2.5))
+        self.assertEqual(m["payout_of_fcf"], 40.0)
+        loss = frames.metrics({"revenue": 100, "net_income": -5, "equity": -10, "ocf": 1}, 500)
+        self.assertIsNone(loss["pe"])
+        self.assertIsNone(loss["roe"])  # negative equity
+        self.assertEqual(loss["dividend_yield"], 0.0)  # cash flow present, no dividend line
+
+    def test_pick_revenue_takes_the_largest(self):
+        data = {"Revenues": {1: 90}, "RevenueFromContractWithCustomerExcludingAssessedTax": {1: 100, 2: 50}}
+        with Patch(frames, "frame", lambda tag, period, *a: data.get(tag, {})):
+            self.assertEqual(frames._pick(frames.DURATION["revenue"], "CY2025", largest=True), {1: 100, 2: 50})
+            self.assertEqual(frames._pick(["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"],
+                                          "CY2025"), {1: 90, 2: 50})
+
+
+class Screener(unittest.TestCase):
+    def test_parse_where(self):
+        self.assertEqual(screener.parse_where("pe<15"), ("pe", "<", 15.0))
+        self.assertEqual(screener.parse_where(" revenue_growth >= -5 "), ("revenue_growth", ">=", -5.0))
+        with self.assertRaises(DeskError):
+            screener.parse_where("pe << 3")
+        with self.assertRaises(DeskError):
+            screener.parse_where("moon>1")
+
+    def test_filters_sort_and_blank_values(self):
+        df = pd.DataFrame([
+            {"ticker": "A", "name": "a", "sector": "Tech", "pe": 10.0, "fcf_yield": 8.0, "has_fundamentals": True},
+            {"ticker": "B", "name": "b", "sector": "Tech", "pe": 30.0, "fcf_yield": 3.0, "has_fundamentals": True},
+            {"ticker": "C", "name": "c", "sector": "Energy", "pe": None, "fcf_yield": 12.0, "has_fundamentals": False},
+            {"ticker": "D", "name": "d", "sector": "Energy", "pe": 12.0, "fcf_yield": 9.5, "has_fundamentals": True},
+        ]).set_index("ticker")
+        for col in screener.FIELDS:
+            if col not in df:
+                df[col] = 1.0
+        rows = [{"ticker": t, "sector": df.at[t, "sector"]} for t in df.index]
+        with Patch(screener.universe, "members", lambda *a: rows), \
+                Patch(screener, "build", lambda r: (df.loc[[x["ticker"] for x in r]], 2025, "2026-11-18")):
+            out = screener.screen(where=["pe<20"], sort="fcf_yield")
+            self.assertEqual([r["ticker"] for r in out["rows"]], ["D", "A"])  # C has no P/E, so it fails pe<20
+            self.assertEqual(out["fundamentals_year"], 2025)
+            out = screener.screen(sector="energy", sort="pe", asc=True)
+            self.assertEqual([r["ticker"] for r in out["rows"]], ["D", "C"])  # blanks sort last
+            with self.assertRaises(DeskError):
+                screener.screen(preset="nope")
+
+
+class Market(unittest.TestCase):
+    def test_distribution_days(self):
+        closes = [100.0] * 30
+        vols = [1000.0] * 30
+        closes[20], vols[20] = 99.0, 1500.0   # down 1% on higher volume: counts
+        closes[21] = 99.0
+        closes[22], vols[22] = 98.9, 900.0    # down on lower volume: does not count
+        for i in range(23, 30):
+            closes[i] = 98.9
+        closes[25], vols[25] = 98.0, 2000.0   # counts
+        df = frame(closes)
+        df["Volume"] = vols
+        days = market.distribution_days(df)
+        self.assertEqual(days, [str(df.index[20].date()), str(df.index[25].date())])
+        df.loc[df.index[-1], "Close"] = 105.0  # 5% above both days' closes removes them
+        self.assertEqual(len(market.distribution_days(df)), 0)
+
+    def test_dd_signal(self):
+        self.assertEqual([market.dd_signal(n) for n in (0, 2, 3, 5, 8)],
+                         ["risk_on", "risk_on", "neutral", "risk_off", "risk_off"])
+
+    def test_parse_fomc(self):
+        html = """<h4><a>2026 FOMC Meetings</a></h4>
+        <div class="fomc-meeting__month col"><strong>January</strong></div><div class="fomc-meeting__date col">27-28</div>
+        Minutes (Released February 18, 2026)
+        <div class="fomc-meeting__month col"><strong>March</strong></div><div class="fomc-meeting__date col">17-18*</div>
+        <h4><a>2025 FOMC Meetings</a></h4>
+        <div class="fomc-meeting__month col"><strong>Apr/May</strong></div><div class="fomc-meeting__date col">30-1</div>
+        <div class="fomc-meeting__month col"><strong>August</strong></div><div class="fomc-meeting__date col">22 (notation vote)</div>"""
+        self.assertEqual(market.parse_fomc(html), [
+            {"date": "2025-05-01", "projections": False},
+            {"date": "2026-01-28", "projections": False},
+            {"date": "2026-03-18", "projections": True}])
+
+    def test_blank_and_cap(self):
+        self.assertIsNone(market._blank("&nbsp;"))
+        self.assertIsNone(market._blank(" "))
+        self.assertEqual(market._cap("$1,234,567"), 1234567.0)
+
+
+FORM4 = b"""<?xml version="1.0"?><ownershipDocument>
+<issuer><issuerCik>0000320193</issuerCik></issuer>
+<reportingOwner><reportingOwnerId><rptOwnerName>DOE JANE</rptOwnerName></reportingOwnerId>
+<reportingOwnerRelationship><isDirector>1</isDirector><isOfficer>1</isOfficer><officerTitle>Chief Financial Officer</officerTitle></reportingOwnerRelationship></reportingOwner>
+<aff10b5One>false</aff10b5One>
+<nonDerivativeTable>
+<nonDerivativeTransaction><transactionDate><value>2026-05-01</value></transactionDate>
+<transactionCoding><transactionCode>P</transactionCode></transactionCoding>
+<transactionAmounts><transactionShares><value>1000</value></transactionShares><transactionPricePerShare><value>50.5</value></transactionPricePerShare></transactionAmounts>
+<postTransactionAmounts><sharesOwnedFollowingTransaction><value>3000</value></sharesOwnedFollowingTransaction></postTransactionAmounts>
+</nonDerivativeTransaction>
+<nonDerivativeTransaction><transactionDate><value>2026-05-02</value></transactionDate>
+<transactionCoding><transactionCode>F</transactionCode></transactionCoding>
+<transactionAmounts><transactionShares><value>100</value></transactionShares></transactionAmounts>
+</nonDerivativeTransaction>
+</nonDerivativeTable>
+<footnotes><footnote id="F1">Weighted average price.</footnote></footnotes>
+</ownershipDocument>"""
+
+PTR = """Name: Hon. Jane Doe
+ID Owner Asset Transaction Type Date Notification Date Amount
+SP Brown & Brown, Inc. Common Stock
+(BRO) [ST]
+S 08/25/2026 09/01/2026 $100,001 -
+$250,000
+F S : New
+Apple Inc. Common Stock (AAPL) [ST] P 08/03/2026 09/01/2026 $1,001 - $15,000
+Some Fund (XYZ) [OT] S (partial) 08/04/2026 09/01/2026 Over $50,000,000"""
+
+
+class FakeDate:
+    """date.today() pinned to a fixed day for one test."""
+    today_value = None
+
+    @classmethod
+    def today(cls):
+        return cls.today_value
+
+    @staticmethod
+    def fromisoformat(s):
+        import datetime
+        return datetime.date.fromisoformat(s)
+
+
+class SmartMoney(unittest.TestCase):
+    def test_form4(self):
+        f = smart.parse_form4(FORM4)
+        self.assertEqual(f["owners"], [{"name": "Doe Jane", "role": "Chief Financial Officer, director"}])
+        self.assertFalse(f["plan"])
+        self.assertEqual(f["issuer_cik"], 320193)
+        self.assertEqual([(t["code"], t["shares"], t["price"]) for t in f["trades"]],
+                         [("P", 1000, 50.5), ("F", 100, 0)])
+
+    def test_ptr(self):
+        t = smart.parse_ptr(PTR)
+        self.assertEqual([(x["ticker"], x["type"], x["traded"], x["amount_low"], x["amount_high"], x["owner"])
+                          for x in t], [
+            ("BRO", "sale", "2026-08-25", 100001, 250000, "spouse"),
+            ("AAPL", "purchase", "2026-08-03", 1001, 15000, "member"),
+            ("XYZ", "partial sale", "2026-08-04", 50000000, None, "member")])
+
+    def test_resolve_fund(self):
+        self.assertEqual(smart.resolve_fund("Berkshire")[0], 1067983)
+        self.assertEqual(smart.resolve_fund("1336528"), (1336528, None))
+        with self.assertRaises(DeskError):
+            smart.resolve_fund("no such fund")
+
+    def test_insider_summary_and_cluster(self):
+        import datetime
+        sub = {"company": "X CORP", "cik": "0000000001", "recent": {
+            "form": ["4", "4", "4", "4"], "filingDate": ["2099-01-20", "2099-01-15", "2099-01-10", "2099-01-05"],
+            "accessionNumber": ["a1", "a2", "a3", "a4"], "primaryDocument": ["x.xml"] * 4}}
+        docs = {
+            "a1": {"owners": [{"name": "A", "role": "CEO"}], "plan": False,
+                   "trades": [{"date": "2099-01-19", "code": "P", "shares": 100, "price": 10, "owned_after": 100}]},
+            "a2": {"owners": [{"name": "B", "role": "director"}], "plan": False,
+                   "trades": [{"date": "2099-01-14", "code": "P", "shares": 50, "price": 10, "owned_after": 50}]},
+            "a3": {"owners": [{"name": "C", "role": "CFO"}], "plan": False,
+                   "trades": [{"date": "2099-01-09", "code": "P", "shares": 10, "price": 10, "owned_after": 10}]},
+            "a4": {"owners": [{"name": "D", "role": "officer"}], "plan": True,
+                   "trades": [{"date": "2099-01-04", "code": "S", "shares": 300, "price": 10, "owned_after": 100}]},
+        }
+        for acc, d in docs.items():
+            cache.put_json("filed", f"f4v2:{acc}", d)
+        FakeDate.today_value = datetime.date(2099, 2, 1)
+        with Patch(smart.sec, "submissions", lambda t: sub), Patch(smart, "date", FakeDate):
+            out = smart.insiders("X", days=60)
+        self.assertEqual(out["open_market_buys"], {"count": 3, "insiders": 3, "value_usd": 1600.0})
+        self.assertEqual(out["open_market_sales"]["share_under_10b5_1_plan_pct"], 100.0)
+        self.assertEqual(out["cluster_buy"]["insiders"], ["A", "B", "C"])
+        self.assertEqual(out["largest_sales"][0]["pct_of_holding_sold"], 75.0)
+
+
+class Backtest(unittest.TestCase):
+    def test_hold_until(self):
+        e = pd.Series([False, True, False, False, True, False])
+        x = pd.Series([False, False, False, True, False, False])
+        self.assertEqual(list(technicals._hold_until(e, x)), [0, 1, 1, 0, 1, 1])
+
+    def test_rising_stock(self):
+        # A steady rise: the 200-day rule is always in, so it matches buy-and-hold.
+        df = frame(list(np.linspace(50, 150, 1600)), start="2015-01-01")
+        with Patch(technicals.prices, "load_history", lambda *a, **k: (df, None)):
+            out = technicals.backtest("X", years=5, cost_bps=0)
+        bh, tr = out["buy_and_hold"], out["rules"]["trend_200d"]
+        self.assertAlmostEqual(tr["cagr_pct"], bh["cagr_pct"], delta=0.05)
+        self.assertEqual(tr["time_in_market_pct"], 100)
+        self.assertEqual(bh["max_drawdown_pct"], 0)
+
+    def test_no_lookahead(self):
+        # One jump: a rule that enters on the jump day's close must not earn that day's move.
+        df = frame([100.0] * 400 + [200.0] * 400, start="2020-01-01")
+        with Patch(technicals.prices, "load_history", lambda *a, **k: (df, None)):
+            out = technicals.backtest("X", years=2, cost_bps=0)
+        self.assertLess(out["rules"]["breakout_55_20"]["cagr_pct"], 1)
+
+
+class PreTradeCheck(unittest.TestCase):
+    def test_sizing_against_limits(self):
+        rows = [{"key": "AAA:US", "ticker": "AAA", "symbol": "AAA", "value_usd": 9000.0, "sector": "Tech"},
+                {"key": "BBB:US", "ticker": "BBB", "symbol": "BBB", "value_usd": 1000.0, "sector": "Energy"}]
+        series = pd.Series(np.linspace(10, 20, 400), index=pd.bdate_range("2025-01-01", periods=400))
+
+        def no_yahoo():
+            raise RuntimeError("offline")
+
+        patches = [Patch(port, "load", lambda: {"positions": {"AAA:US": {}}, "closed": [], "archive": []}),
+                   Patch(port, "holdings", lambda d: (rows, 10000.0)),
+                   Patch(port, "raw_closes", lambda s: series), Patch(port, "closes", lambda s: series),
+                   Patch(port, "atr_pct", lambda s: 0.05),
+                   Patch(prices, "profile", lambda *a, **k: {"sector": "Tech"}),
+                   Patch(prices, "_yf", no_yahoo)]
+        for p in patches:
+            p.__enter__()
+        try:
+            out = port.check("NEW", 100, 10.0, "US", stop=9.0)
+        finally:
+            for p in reversed(patches):
+                p.__exit__(None, None, None)
+        # 1,000 of new money: weight 1000/11000, tech (9000+1000)/11000, loss 100/11000
+        self.assertEqual([c["value_pct"] for c in out["checks"]], [9.1, 90.9, 0.91])
+        self.assertEqual([c["status"] for c in out["checks"]], ["ok", "over", "ok"])
+        # risk: x * 1 = 0.01 * (10000 + 10x)  ->  x = 100 / 0.9
+        self.assertAlmostEqual(out["max_shares_within_limits"]["by_risk"], round(100 / 0.9, 1))
+        # weight: 10x / (10000 + 10x) = 0.2  ->  x = 250
+        self.assertAlmostEqual(out["max_shares_within_limits"]["by_position_weight"], 250.0)
 
 
 if __name__ == "__main__":

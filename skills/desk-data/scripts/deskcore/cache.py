@@ -21,6 +21,10 @@ TTL = {
     "facts": 7 * 86400,
     "story": 30 * 86400,
     "news": 3600,
+    "universe": 7 * 86400,
+    "listing": 86400,
+    "calendar": 6 * 3600,
+    "filed": 365 * 86400,
 }
 
 

@@ -23,6 +23,9 @@ STORY = S / "company-story" / "scripts" / "story.py"
 NEWS = S / "news-analyst" / "scripts" / "news.py"
 SCEN = S / "scenarios" / "scripts" / "scenarios.py"
 PORT = S / "portfolio" / "scripts" / "portfolio.py"
+SCREEN = S / "screener" / "scripts" / "screener.py"
+MARKET = S / "market" / "scripts" / "market.py"
+SMART = S / "smart-money" / "scripts" / "smartmoney.py"
 
 # ticker, market -> the Wikipedia article it must land on
 STORIES = [("AAPL", "US", "Apple Inc."), ("XOM", "US", "ExxonMobil"), ("BRK.B", "US", "Berkshire Hathaway"),
@@ -176,6 +179,59 @@ def main():
                            [(e["episode"], e["portfolio_pct"]) for e in res.get("past_crashes", [])] if cmd == "stress" else
                            f"{len(res.get('flags', []))} flags, disposition {dig(res, ('disposition', 'reads'))}")
                 print(f"{'ok ' if good else 'BAD'} portfolio {cmd}: {res.get('error') or summary} {err[:80]}"[:200])
+            res, err = call(PORT, "check", "MSFT", "10", "--stop", "1", env=env)
+            good = "error" not in res and len(res.get("checks", [])) == 3
+            failures += not good
+            print(f"{'ok ' if good else 'BAD'} portfolio check: {res.get('error') or res.get('verdict')}"[:200])
+        print("-- backtest, screener, market")
+        res, err = call(TECH, "SPY", "--backtest")
+        good = "error" not in res and len(res.get("rules", {})) == 5 and dig(res, ("buy_and_hold", "cagr_pct"))
+        failures += not good
+        print(f"{'ok ' if good else 'BAD'} backtest SPY: buy-and-hold {dig(res, ('buy_and_hold', 'cagr_pct'))}% a year, "
+              f"trend_200d {dig(res, ('rules', 'trend_200d', 'cagr_pct'))}% {res.get('error', '')}"[:200])
+        for args in (("--preset", "quality"), ("--preset", "momentum"), ("--universe", "sp600", "--preset", "value"),
+                     ("--tickers", "AAPL", "BRK.B", "JPM", "--sort", "pe")):
+            res, err = call(SCREEN, "run", *args, "--top", "5")
+            rows = res.get("rows", [])
+            pes = [r.get("pe") for r in rows if r.get("pe") is not None]
+            good = "error" not in res and res.get("scanned", 0) >= (3 if "--tickers" in args else 300) \
+                and rows and all(0 < x < 500 for x in pes)
+            failures += not good
+            print(f"{'ok ' if good else 'BAD'} screener {' '.join(args)}: {res.get('matches')} of {res.get('scanned')}, "
+                  f"top {[r['ticker'] for r in rows]} {res.get('error', '')}"[:200])
+        res, err = call(MARKET, "regime")
+        missing = [k for k, v in res.get("signals", {}).items() if v == "missing"]
+        good = "error" not in res and not missing and res.get("posture")
+        failures += not good
+        print(f"{'ok ' if good else 'BAD'} market regime: {res.get('posture')} on={res.get('risk_on')} "
+              f"off={res.get('risk_off')} missing={missing} {res.get('error', '')}"[:200])
+        res, err = call(MARKET, "calendar", "--days", "10", "--tickers", "NVDA")
+        good = "error" not in res and not res.get("errors") and res.get("next_fed_decision")
+        failures += not good
+        print(f"{'ok ' if good else 'BAD'} market calendar: {len(res.get('us_releases', []))} releases, "
+              f"next Fed {res.get('next_fed_decision')} {res.get('errors', '')}"[:200])
+        if os.environ.get("DESK_SEC_USER_AGENT"):
+            print("-- smart money")
+            res, _ = call(SMART, "fund", "berkshire")
+            hold = res.get("holdings", [])
+            mapped = sum(1 for h in hold if h.get("ticker"))
+            good = "error" not in res and len(hold) >= 10 and mapped >= len(hold) - 2
+            failures += not good
+            print(f"{'ok ' if good else 'BAD'} 13F berkshire: {res.get('quarter_end')}, {res.get('positions')} stocks, "
+                  f"{mapped}/{len(hold)} tickers, top {[h.get('ticker') for h in hold[:5]]} {res.get('error', '')}"[:200])
+            for t in ("AAPL", "BRK.B"):
+                res, _ = call(SMART, "insiders", t, "--days", "120")
+                good = "error" not in res and "open_market_sales" in res
+                failures += not good
+                print(f"{'ok ' if good else 'BAD'} insiders {t}: {res.get('form4_filings')} filings, buys "
+                      f"{res.get('open_market_buys')}, sales {dig(res, ('open_market_sales', 'value_usd'))} "
+                      f"{res.get('error', '')}"[:200])
+            res, _ = call(SMART, "congress", "--days", "30")
+            good = "error" not in res and res.get("reports_read", 0) > 0 and res.get("stock_trades", 0) > 0
+            failures += not good
+            print(f"{'ok ' if good else 'BAD'} congress 30 days: {res.get('reports_read')} reports, "
+                  f"{res.get('stock_trades')} trades, top {[r['ticker'] for r in res.get('most_bought', [])[:5]]} "
+                  f"{res.get('error', '')}"[:200])
         failures += not expect_error("unknown ticker", DESK, "quote", "ZZZZQQ")
         failures += not expect_error("ETF has no statements", FUND, "SPY")
         failures += not expect_error("unknown market", DESK, "quote", "AAPL", "--market", "LSE")

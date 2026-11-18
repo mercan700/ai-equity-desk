@@ -152,11 +152,120 @@ def analyze(ticker, market="US"):
     }
 
 
+# ---------- backtest ----------
+
+def _sma_signal(c, fast, slow):
+    return (c.rolling(fast).mean() > c.rolling(slow).mean()) if fast else (c > c.rolling(slow).mean())
+
+
+def _hold_until(enter, leave):
+    """Long from an entry day until an exit day, as a 0/1 series."""
+    state, out = 0, []
+    for e, x in zip(enter, leave):
+        if state == 0 and e:
+            state = 1
+        elif state == 1 and x:
+            state = 0
+        out.append(state)
+    return pd.Series(out, index=enter.index)
+
+
+def signals(df):
+    """Position wanted at each close, one column per rule (1 = in the stock, 0 = in cash)."""
+    c = df["Close"]
+    r = rsi(c)
+    ema12, ema26 = c.ewm(span=12, adjust=False).mean(), c.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    return {
+        "trend_200d": _sma_signal(c, None, 200).astype(int),
+        "golden_cross_50_200": _sma_signal(c, 50, 200).astype(int),
+        "macd_above_signal": (macd > macd.ewm(span=9, adjust=False).mean()).astype(int),
+        "rsi_dip_buy": _hold_until(r < 30, r > 55),
+        "breakout_55_20": _hold_until(c > c.shift(1).rolling(55).max(), c < c.shift(1).rolling(20).min()),
+    }
+
+
+RULE_TEXT = {
+    "trend_200d": "in the stock while the close is above its 200-day average",
+    "golden_cross_50_200": "in the stock while the 50-day average is above the 200-day",
+    "macd_above_signal": "in the stock while MACD is above its signal line",
+    "rsi_dip_buy": "buy when RSI(14) falls under 30, sell when it rises above 55",
+    "breakout_55_20": "buy on a close above the 55-day high, sell on a close below the 20-day low",
+}
+
+
+def stats(daily, position=None):
+    eq = (1 + daily).cumprod()
+    years = len(daily) / 252
+    vol = daily.std() * math.sqrt(252)
+    out = {"cagr_pct": _num((eq.iloc[-1] ** (1 / years) - 1) * 100) if years > 0 else None,
+           "max_drawdown_pct": _num((eq / eq.cummax() - 1).min() * 100),
+           "volatility_pct": _num(vol * 100),
+           "return_per_risk": _num(daily.mean() * 252 / vol) if vol else None}
+    if position is not None:
+        trips = []
+        entry = None
+        for d, p in position.items():
+            if p and entry is None:
+                entry = d
+            elif not p and entry is not None:
+                trips.append(float(eq.loc[d] / eq.loc[entry] - 1))
+                entry = None
+        out.update({"time_in_market_pct": _num(position.mean() * 100, 0), "trades": len(trips),
+                    "win_rate_pct": _num(sum(t > 0 for t in trips) / len(trips) * 100, 0) if trips else None})
+    return out
+
+
+def backtest(ticker, market="US", years=10, cost_bps=10):
+    """Each rule against buy-and-hold on dividend-adjusted closes. A signal at today's close
+    is traded at the next close, and every switch in or out pays cost_bps."""
+    mkt, _ = markets.get(market)
+    sym = markets.symbol(ticker, mkt)
+    df, _ = prices.load_history(sym, "max", "1d")
+    df = df.dropna(subset=["Close"])
+    warm = 260  # the 200-day rules need history before the test starts
+    start = df.index[-1] - pd.DateOffset(years=years)
+    if len(df) < warm + 252:
+        raise DeskError(f"{sym} has {len(df)} trading days; a backtest needs at least four years.")
+    if df.index[warm] > start:
+        start = df.index[warm]
+    ret = df["Close"].pct_change().fillna(0)
+    test = df.index >= start
+    hold = ret[test]
+    halves = [hold.index[0], hold.index[len(hold) // 2], hold.index[-1]]
+    out = {"symbol": sym, "from": str(hold.index[0].date()), "to": str(hold.index[-1].date()),
+           "cost_per_switch_pct": cost_bps / 100,
+           "buy_and_hold": {**stats(hold), "first_half": stats(hold[hold.index < halves[1]]),
+                            "second_half": stats(hold[hold.index >= halves[1]])},
+           "rules": {}}
+    for name, sig in signals(df).items():
+        pos = sig.shift(1).fillna(0)  # decided at the close, held from the next day
+        daily = pos * ret - pos.diff().abs().fillna(0) * cost_bps / 10000
+        d, p = daily[test], pos[test]
+        first, second = d[d.index < halves[1]], d[d.index >= halves[1]]
+        res = {"rule": RULE_TEXT[name], **stats(d, p),
+               "first_half_cagr_pct": stats(first)["cagr_pct"], "second_half_cagr_pct": stats(second)["cagr_pct"]}
+        bh = out["buy_and_hold"]
+        res["beat_buy_and_hold"] = bool(res["cagr_pct"] is not None and bh["cagr_pct"] is not None
+                                        and res["cagr_pct"] > bh["cagr_pct"])
+        res["shallower_drawdown"] = bool(res["max_drawdown_pct"] > bh["max_drawdown_pct"])
+        out["rules"][name] = res
+    out["notes"] = ["Dividend-adjusted prices, no taxes, no slippage beyond the cost per switch. Cash earns nothing.",
+                    "Five fixed rules tested on one stock. The best of five on past data usually does worse afterwards; "
+                    "check that it held up in both halves."]
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="Technical picture of one stock.")
     ap.add_argument("ticker")
     ap.add_argument("--market", default=config.load().get("default_market", "US"), help="US or BIST")
+    ap.add_argument("--backtest", action="store_true", help="test five classic rules against buy-and-hold")
+    ap.add_argument("--years", type=int, default=10)
+    ap.add_argument("--cost", type=float, default=10, help="cost per switch in basis points (default 10)")
     a = ap.parse_args()
+    if a.backtest:
+        return run(lambda: backtest(a.ticker, a.market, a.years, a.cost))
     return run(lambda: analyze(a.ticker, a.market))
 
 if __name__ == "__main__":

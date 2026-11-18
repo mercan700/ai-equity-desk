@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_SCRIPTS = os.path.join(HERE, "..", "..", "desk-data", "scripts")
 sys.path.insert(0, os.path.abspath(DATA_SCRIPTS))
 
-PACKAGES = {"yfinance": "yfinance", "pandas": "pandas", "requests": "requests"}
+PACKAGES = {"yfinance": "yfinance", "pandas": "pandas", "requests": "requests", "pypdf": "pypdf"}
 
 
 def check(name, fn):

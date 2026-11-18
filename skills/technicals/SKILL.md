@@ -1,6 +1,6 @@
 ---
 name: technicals
-description: Technical analysis of one stock from daily prices. Reports trend and moving averages, RSI and MACD, volatility, support and resistance from recent swing points, volume, and performance against the S&P 500 (the BIST 100 for Turkish stocks). Use for questions like "what does the chart of X say", "technical analysis of X", "is X overbought", "support and resistance for X", "X trend", "X RSI" or "is X beating the market". Built for US stocks; Borsa Istanbul works with --market BIST.
+description: Technical analysis of one stock from daily prices. Reports trend and moving averages, RSI and MACD, volatility, support and resistance from recent swing points, volume, and performance against the S&P 500 (the BIST 100 for Turkish stocks). Use for questions like "what does the chart of X say", "technical analysis of X", "is X overbought", "support and resistance for X", "X trend", "X RSI" or "is X beating the market". Also backtests five classic rules (200-day trend, golden cross, MACD, RSI dip buying, 55/20-day breakout) on the stock against buy-and-hold, for "backtest X", "does the 200-day rule work on X" or "would a moving average strategy have helped". Built for US stocks; Borsa Istanbul works with --market BIST.
 ---
 
 # Technicals
@@ -37,6 +37,22 @@ What would change the picture: 2 or 3 concrete conditions, for example
 
 This describes past prices and is not investment advice.
 ```
+
+## Backtest
+
+```
+python scripts/technicals.py AAPL --backtest
+python scripts/technicals.py SPY --backtest --years 20 --cost 5
+```
+
+Each rule is compared with buying and holding over the same dates, with dividends, a cost on every switch (10 basis points by default) and trades at the close after the signal. The output gives growth a year, the deepest fall, volatility, time in the market, the number of round trips and the win rate, plus growth in each half of the period.
+
+Brief: a table with buy-and-hold first and one row per rule, then two or three lines. Say which rules cut the deepest fall and what that cost in growth, and whether any result held in both halves. Most rules trail buy-and-hold in a rising market and earn their keep in crashes. Say that plainly when the numbers show it.
+
+Backtest rules:
+- Never present the best rule as a strategy to follow. With five rules on one stock, the winner is partly luck.
+- A rule that beat buy-and-hold in only one half did not beat it. Say so.
+- Few round trips (under 10) or little time in the market make the figures fragile. Mention it.
 
 ## Rules
 
