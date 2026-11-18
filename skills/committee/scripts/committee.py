@@ -107,26 +107,48 @@ def gather(ticker, market="US"):
             "sections": {k: brief(k, v) for k, v in data.items() if isinstance(v, dict) and "error" not in v}}
 
 
+def _obj(x):
+    """A sub-part of a section; a source that failed inside a skill gives {"error": ...} or a string."""
+    return x if isinstance(x, dict) else {}
+
+
+def _rows(x):
+    """A list of dicts, or [] when the source failed and returned an error instead of a list."""
+    return [r for r in x if isinstance(r, dict)] if isinstance(x, list) else []
+
+
+def _failed(x):
+    return x.get("error") if isinstance(x, dict) else (x if isinstance(x, str) else None)
+
+
 def brief(name, d):
     """What Claude needs to read from each section; the full output stays in the data file."""
     if name == "story":
-        p = d.get("profile", {})
-        w = d.get("wikipedia") or {}
-        return {"profile": {k: p.get(k) for k in ("name", "sector", "industry", "country", "employees")},
-                "summary": (p.get("summary") or "")[:500], "lead": (w.get("lead") or "")[:700],
-                "history": (w.get("history") or "")[:1500], "market_history": d.get("market_history")}
+        p, w = _obj(d.get("profile")), _obj(d.get("wikipedia"))
+        out = {"profile": {k: p.get(k) for k in ("name", "sector", "industry", "country", "employees")},
+               "summary": (p.get("summary") or "")[:500], "lead": (w.get("lead") or "")[:700],
+               "history": (w.get("history") or "")[:1500], "market_history": d.get("market_history")}
+        for part in ("profile", "wikipedia"):
+            if _failed(d.get(part)):
+                out[f"{part}_error"] = _failed(d.get(part))
+        return out
     if name == "news":
-        n = d.get("news", {})
-        return {"topic_counts": n.get("topic_counts"),
-                "items": [{k: i.get(k) for k in ("date", "title", "source", "topics", "summary")}
-                          for i in n.get("items", [])],
-                "company_filings_8k": [{k: f.get(k) for k in ("filed", "items")} for f in d.get("company_filings_8k", [])]}
+        n = _obj(d.get("news"))
+        out = {"topic_counts": n.get("topic_counts"),
+               "items": [{k: i.get(k) for k in ("date", "title", "source", "topics", "summary")}
+                         for i in _rows(n.get("items"))],
+               "company_filings_8k": [{k: f.get(k) for k in ("filed", "items")}
+                                      for f in _rows(d.get("company_filings_8k"))]}
+        for part, value in (("news", d.get("news")), ("company_filings_8k", d.get("company_filings_8k"))):
+            if _failed(value):
+                out[f"{part}_error"] = _failed(value)
+        return out
     if name == "calendar":
         return {k: d.get(k) for k in ("next_fed_decision", "your_stocks_reporting", "your_stocks_next_earnings")} | {
-            "us_releases": [f"{r.get('date')} {r.get('event')}" for r in d.get("us_releases", [])][:10]}
+            "us_releases": [f"{r.get('date')} {r.get('event')}" for r in _rows(d.get("us_releases"))][:10]}
     if name == "insiders":
         return {k: v for k, v in d.items() if k not in ("largest_sales",)} | {
-            "largest_sales": d.get("largest_sales", [])[:5]}
+            "largest_sales": _rows(d.get("largest_sales"))[:5]}
     return d
 
 
@@ -437,7 +459,7 @@ def render(data, views, unverified):
              f"trend: {g(t, 'trend', 'label')}" if g(t, "trend", "label") else None,
              f"market: {g(s, 'market', 'posture')}" if g(s, "market", "posture") else None]
     nxt = g(s, "calendar", "your_stocks_reporting") or g(s, "calendar", "your_stocks_next_earnings") or []
-    for e in nxt if isinstance(nxt, list) else []:
+    for e in _rows(nxt):
         if (e.get("ticker") or "").upper() == data["ticker"]:
             chips.append(f"earnings {e.get('date') or e.get('next_earnings')}")
     if g(s, "calendar", "next_fed_decision", "date"):
@@ -445,7 +467,7 @@ def render(data, views, unverified):
     ch = views["chair"]
     bear = views["bear"]
     watch = "".join(f"<li>{E(w)}</li>" for w in ch.get("watch") or [])
-    news = g(s, "news", "news", "items") or []
+    news = _rows(g(s, "news", "news", "items"))
     news_html = "".join(
         f'<li><span class="d">{E(n.get("date", ""))} · {E(n.get("source", ""))}</span> '
         f'<a href="{E(n.get("url", ""))}" rel="noopener">{E(n.get("title", ""))}</a></li>' for n in news[:8])

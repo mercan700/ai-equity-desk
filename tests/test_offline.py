@@ -1071,5 +1071,63 @@ class Committee(unittest.TestCase):
         self.assertTrue(Path(out["report"]).read_text(encoding="utf-8").startswith("<!doctype html>"))
 
 
+class CommitteePartialFailures(unittest.TestCase):
+    """A source failing inside a skill returns {"error": ...} where a list was expected."""
+
+    def test_brief_survives_failed_sub_sources(self):
+        news = committee.brief("news", {"news": {"items": [{"date": "2026-11-18", "title": "t"}, "junk"]},
+                                        "company_filings_8k": {"error": "SEC refused the request (403)"}})
+        self.assertEqual(news["company_filings_8k"], [])
+        self.assertIn("403", news["company_filings_8k_error"])
+        self.assertEqual(len(news["items"]), 1)
+        story_b = committee.brief("story", {"profile": {"name": "Test Co"},
+                                            "wikipedia": {"error": "no page"}})
+        self.assertEqual(story_b["profile"]["name"], "Test Co")
+        self.assertEqual(story_b["wikipedia_error"], "no page")
+        cal = committee.brief("calendar", {"us_releases": {"error": "down"}})
+        self.assertEqual(cal["us_releases"], [])
+        ins = committee.brief("insiders", {"largest_sales": "n/a"})
+        self.assertEqual(ins["largest_sales"], [])
+
+    def test_report_renders_with_odd_news_and_calendar(self):
+        data = committee_data()
+        data["sections"]["news"] = {"news": {"items": "none"}, "company_filings_8k": {"error": "x"}}
+        data["sections"]["calendar"] = {"your_stocks_reporting": ["TST 2026-12-01"]}
+        page = committee.render(data, committee_views(), [])
+        self.assertTrue(page.startswith("<!doctype html>"))
+
+
+class Packaging(unittest.TestCase):
+    """The marketplace zip of one skill must run without the rest of the plugin."""
+
+    def test_fundamentals_zip_is_standalone(self):
+        import subprocess
+        import zipfile
+        pkg = load_script("tools/package_agensi.py")
+        out = Path(tempfile.mkdtemp(prefix="pkg-"))
+        r = pkg.build("fundamentals", out)
+        self.assertEqual(r["problems"], [])
+        self.assertIn("verify", r["deskcore_modules"])
+        self.assertNotIn("wiki", r["deskcore_modules"])
+        self.assertIn("www.sec.gov", r["hosts"])
+        unpacked = Path(tempfile.mkdtemp(prefix="unzip-"))
+        zipfile.ZipFile(r["zip"]).extractall(unpacked)
+        skill = unpacked / "fundamentals"
+        self.assertIn("## Network access", (skill / "SKILL.md").read_text(encoding="utf-8"))
+        env = dict(os.environ, PYTHONPATH="")
+        probe = subprocess.run(
+            [sys.executable, "-c", "import sys; sys.argv=['x']; import runpy; "
+             "g = runpy.run_path('scripts/fundamentals.py', run_name='probe'); "
+             "import deskcore; print(deskcore.__file__)"],
+            cwd=skill, env=env, capture_output=True, text=True)
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+        self.assertTrue(Path(probe.stdout.strip()).resolve().is_relative_to(skill.resolve()))
+
+    def test_committee_is_not_packaged(self):
+        pkg = load_script("tools/package_agensi.py")
+        with self.assertRaises(SystemExit):
+            pkg.build("committee", Path(tempfile.mkdtemp(prefix="pkg-")))
+
+
 if __name__ == "__main__":
     unittest.main()

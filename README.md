@@ -22,7 +22,7 @@ Claude Code skills for stock traders and investors, built on free data. They res
 
 **It runs on free sources only.** yfinance, SEC EDGAR, FRED, BIS, Nasdaq's public calendars, the House Clerk, Wikipedia and Google News. Anthropic's own financial-services plugins connect to paid providers such as FactSet, and most finance MCP servers need an API key.
 
-**It is tested.** 83 offline tests with hand-checked answers, plus a live check that runs every script on companies picked to break naive code: share classes (BRK.B), foreign ADRs that report in another currency (TSM, BABA), banks (JPM), an ETF and an unknown ticker.
+**It is tested.** 87 offline tests with hand-checked answers, plus a live check that runs every script on companies picked to break naive code: share classes (BRK.B), foreign ADRs that report in another currency (TSM, BABA), banks (JPM), an ETF and an unknown ticker.
 
 **It is cheap on tokens.** The scripts do the arithmetic and print one line of JSON. A price check is about 200 tokens, a fundamentals report with three peers under 2,000.
 
