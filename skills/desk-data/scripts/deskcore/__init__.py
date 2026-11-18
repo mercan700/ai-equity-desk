@@ -1,4 +1,4 @@
-"""deskcore: shared data layer for ai-equity-desk skills.
+"""deskcore: shared data layer for the stock trader skills.
 
 Every function returns small, JSON-ready dicts so Claude reads summaries,
 never raw tables. Raw tables are cached on disk for other scripts to reuse.

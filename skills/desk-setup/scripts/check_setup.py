@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks that ai-equity-desk can run on this computer and saves settings.
+"""Checks that stock-trader-skills can run on this computer and saves settings.
 
   check_setup.py                       run all checks
   check_setup.py --install             pip-install missing packages first

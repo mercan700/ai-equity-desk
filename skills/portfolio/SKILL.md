@@ -5,7 +5,7 @@ description: Keeps the user's portfolio with a reason attached to every position
 
 # Portfolio
 
-The portfolio is stored in `portfolio.json` in the desk folder on the user's computer. Only ticker symbols go out, to fetch prices. Prices are per share, in the stock's trading currency. Totals are in US dollars.
+The portfolio is stored in `portfolio.json` in the data folder on the user's computer. Only ticker symbols go out, to fetch prices. Prices are per share, in the stock's trading currency. Totals are in US dollars.
 
 ## Commands
 

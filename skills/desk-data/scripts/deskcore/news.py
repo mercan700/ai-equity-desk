@@ -16,7 +16,7 @@ from . import cache
 from .prices import _yf
 from .wiki import clean_name, norm
 
-UA = {"User-Agent": "Mozilla/5.0 (compatible; ai-equity-desk/0.4)"}
+UA = {"User-Agent": "Mozilla/5.0 (compatible; stock-trader-skills/0.6)"}
 
 # Topic -> keywords. Matching is on ASCII-folded lowercase text (see wiki.norm), so the
 # Turkish words are written without Turkish letters: 'bilanco' matches 'bilanço'.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ai-equity-desk data CLI. Prints compact JSON so Claude reads summaries, not tables.
+"""stock-trader-skills data CLI. Prints compact JSON so Claude reads summaries, not tables.
 
   desk.py quote AAPL
   desk.py quote THYAO --market BIST
@@ -29,7 +29,7 @@ def verify_ticker(ticker):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="desk.py", description="ai-equity-desk data layer")
+    p = argparse.ArgumentParser(prog="desk.py", description="stock-trader-skills data layer")
     p.add_argument("--pretty", action="store_true", help="indented JSON (more tokens)")
     sub = p.add_subparsers(dest="cmd", required=True)
     default_market = config.load().get("default_market", "US")

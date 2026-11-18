@@ -1,6 +1,6 @@
 ---
 name: desk-setup
-description: Installs and checks the equity desk on this computer. Verifies Python, installs yfinance, pandas and requests, stores the SEC contact user-agent and the default market, and tests each data source. Use before the first analysis, when the user asks to set up or install the desk, when something "doesn't work", or when another desk skill returns a setup error.
+description: Installs and checks the stock trader skills on this computer. Verifies Python, installs yfinance, pandas and requests, stores the SEC contact user-agent and the default market, and tests each data source. Use before the first analysis, when the user asks to set up or install the desk, when something "doesn't work", or when another desk skill returns a setup error.
 ---
 
 # Desk setup
@@ -37,6 +37,6 @@ The desk runs on the user's computer and downloads all data from free public sou
 
 ## Notes
 
-- Settings and cache are stored in `~/.ai-equity-desk/`. Set the `DESK_HOME` environment variable to use another folder. The plugin folder is never written to.
+- Settings and cache are stored in `~/.stock-trader-skills/`. Set the `DESK_HOME` environment variable to use another folder. The plugin folder is never written to.
 - If the yfinance check fails while the others pass, Yahoo is usually rate-limiting the computer for a few minutes. Wait and run the check again.
 - Without internet access, `--offline` checks only Python, packages and the data folder.

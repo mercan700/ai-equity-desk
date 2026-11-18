@@ -3,7 +3,8 @@ import json
 import os
 from pathlib import Path
 
-HOME = Path(os.environ.get("DESK_HOME", Path.home() / ".ai-equity-desk"))
+_NEW, _OLD = Path.home() / ".stock-trader-skills", Path.home() / ".ai-equity-desk"
+HOME = Path(os.environ.get("DESK_HOME", _OLD if _OLD.exists() and not _NEW.exists() else _NEW))
 CACHE_DIR = HOME / "cache"
 CONFIG_FILE = HOME / "config.json"
 

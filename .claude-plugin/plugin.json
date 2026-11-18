@@ -1,21 +1,29 @@
 {
-  "name": "ai-equity-desk",
+  "name": "stock-trader-skills",
   "version": "0.6.0",
-  "description": "Claude skills for researching US stocks with free data: fundamentals checked against SEC filings, technicals, company history, news, scenarios with a scorecard, and a portfolio journal with crash tests. No API keys. Not investment advice.",
+  "description": "Claude skills for stock traders: analyzes US stocks with free data. Fundamentals checked against SEC filings, technical analysis, company history, news, bull and bear scenarios with a scorecard, and a portfolio journal with crash tests and a review of your trading habits. No API keys. Does not place trades. Not investment advice.",
   "author": {
     "name": "coraltechh"
   },
   "license": "PolyForm-Noncommercial-1.0.0",
-  "repository": "https://github.com/mercan700/ai-equity-desk",
+  "repository": "https://github.com/mercan700/claude-stock-trader-skills",
   "keywords": [
+    "ai-trading",
+    "claude",
+    "claude-code",
     "equity-research",
     "finance",
     "fundamental-analysis",
     "investing",
+    "portfolio",
     "sec-edgar",
     "stock-analysis",
+    "stock-market",
+    "stock-trading",
     "stocks",
     "technical-analysis",
+    "trading",
+    "trading-assistant",
     "yfinance"
   ]
 }

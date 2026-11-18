@@ -12,7 +12,7 @@ import requests
 
 from . import DeskError, cache
 
-UA = {"User-Agent": "ai-equity-desk/0.4 (personal stock research tool)"}
+UA = {"User-Agent": "stock-trader-skills/0.6 (personal stock research tool)"}
 HISTORY_HEADINGS = re.compile(r"^(history|corporate history|company history|tarihçe|tarihçesi|tarih)$", re.I)
 
 # Legal-form words that make a search miss ("Türk Hava Yollari Anonim Ortakligi").

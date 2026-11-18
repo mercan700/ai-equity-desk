@@ -47,4 +47,4 @@ For Borsa Istanbul add `--market BIST`, for example `quote THYAO --market BIST`.
 | FRED | US macro series | free public CSV, no key |
 | BIS (Bank for International Settlements) | consumer prices and policy rates by country | free, no key |
 
-Results are cached in `~/.ai-equity-desk/cache`: prices for 15 minutes, statements and profiles for 7 days. A repeated question reads the cache and makes no network call.
+Results are cached in `~/.stock-trader-skills/cache`: prices for 15 minutes, statements and profiles for 7 days. A repeated question reads the cache and makes no network call.
