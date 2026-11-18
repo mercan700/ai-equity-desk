@@ -3,12 +3,12 @@
   "owner": {
     "name": "coraltechh"
   },
-  "description": "Claude skills for stock research with free data.",
+  "description": "Claude skills for US stock research with free, SEC-checked data.",
   "plugins": [
     {
       "name": "ai-equity-desk",
       "source": "./",
-      "description": "Stock research skills for Claude using free data. Not investment advice."
+      "description": "Fundamentals, technicals, company history and news for US stocks, using free data checked against SEC filings. Not investment advice."
     }
   ]
 }

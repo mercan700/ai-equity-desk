@@ -1,6 +1,6 @@
 ---
 name: fundamentals
-description: Fundamental analysis of one listed company from its financial statements. Grades growth, profitability, cash conversion and balance sheet, describes valuation, and compares the company with peers you choose. Use for questions like "is X a good business", "analyze NVDA's fundamentals", "how profitable is X", "is X expensive", "compare X with its competitors", "X balance sheet" or "X valuation". Covers US stocks and Borsa Istanbul (--market BIST).
+description: Fundamental analysis of one listed company from its financial statements. Grades growth, profitability, cash conversion and balance sheet, describes valuation, and compares the company with peers you choose. Use for questions like "is X a good business", "analyze NVDA's fundamentals", "how profitable is X", "is X expensive", "compare X with its competitors", "X balance sheet" or "X valuation". Built for US stocks; Borsa Istanbul works with --market BIST.
 ---
 
 # Fundamentals

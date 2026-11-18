@@ -1,6 +1,6 @@
 ---
 name: technicals
-description: Technical analysis of one stock from daily prices. Reports trend and moving averages, RSI and MACD, volatility, support and resistance from recent swing points, volume, and performance against the S&P 500 or BIST 100. Use for questions like "what does the chart of X say", "technical analysis of X", "is X overbought", "support and resistance for X", "X trend", "X RSI" or "is X beating the market". Covers US stocks and Borsa Istanbul (--market BIST).
+description: Technical analysis of one stock from daily prices. Reports trend and moving averages, RSI and MACD, volatility, support and resistance from recent swing points, volume, and performance against the S&P 500 (the BIST 100 for Turkish stocks). Use for questions like "what does the chart of X say", "technical analysis of X", "is X overbought", "support and resistance for X", "X trend", "X RSI" or "is X beating the market". Built for US stocks; Borsa Istanbul works with --market BIST.
 ---
 
 # Technicals

@@ -1,6 +1,6 @@
 ---
 name: news-analyst
-description: Reads the recent news about one company and sorts it into what could move the business and what is noise. Pulls headlines from Google News and Yahoo Finance and, for US companies, the 8-K filings the company made in the same weeks. Use for questions like "what's the news on X", "why did X move", "anything happening with X", "X catalysts", "X risks this month" or "X haberleri". Covers US stocks and Borsa Istanbul (--market BIST, Turkish-language sources).
+description: Reads the recent news about one company and sorts it into what could move the business and what is noise. Pulls headlines from Google News and Yahoo Finance and, for US companies, the 8-K filings the company made in the same weeks. Use for questions like "what's the news on X", "why did X move", "anything happening with X", "X catalysts", "X risks this month" or "X haberleri". Built for US stocks; Borsa Istanbul works with --market BIST and Turkish-language sources.
 ---
 
 # News analyst

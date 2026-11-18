@@ -1,6 +1,6 @@
 ---
 name: desk-data
-description: Fetches free market data and returns short JSON summaries. Covers price and returns, returns after inflation and in US dollars, long-run history, company profile and multiples, financial statements with margins and growth, a cross-check of those statements against SEC filings, SEC filing lists, US and Turkish macro data, and a snapshot of world markets. Use whenever a question about a stock or the economy needs real numbers ("how is AAPL doing", "NVDA margins", "latest 10-K", "where are rates"). The other desk skills use it as their data source. Covers US stocks and Borsa Istanbul (--market BIST).
+description: Fetches free market data and returns short JSON summaries. Covers price and returns, returns after inflation and in US dollars, long-run history, company profile and multiples, financial statements with margins and growth, a cross-check of those statements against SEC filings, SEC filing lists, US macro data (Turkish macro for BIST), and a snapshot of world markets. Use whenever a question about a stock or the economy needs real numbers ("how is AAPL doing", "NVDA margins", "latest 10-K", "where are rates"). The other desk skills use it as their data source. Built for US stocks; Borsa Istanbul works with --market BIST.
 ---
 
 # Desk data
@@ -12,7 +12,7 @@ description: Fetches free market data and returns short JSON summaries. Covers p
 | Question | Command |
 |---|---|
 | Last price, returns from 1 day to 1 year, 52-week range, recent volatility | `python scripts/desk.py quote AAPL` |
-| Return over 1, 3 and 5 years in local currency, in US dollars and after inflation | `python scripts/desk.py returns THYAO --market BIST` |
+| Return over 1, 3 and 5 years in local currency, in US dollars and after inflation | `python scripts/desk.py returns AAPL` |
 | Long-run CAGR, volatility and largest drawdown; also saves the prices as CSV | `python scripts/desk.py history AAPL --period 10y` |
 | Business description, sector, size, P/E, P/B, EV/EBITDA, dividend yield | `python scripts/desk.py profile AAPL` |
 | Revenue, profit, cash flow and debt, with margins, growth and ROE | `python scripts/desk.py financials AAPL` (add `--quarterly` for quarters) |

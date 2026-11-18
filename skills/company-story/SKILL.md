@@ -1,6 +1,6 @@
 ---
 name: company-story
-description: Tells the story of a listed company. Covers what it does, where it came from, how revenue and profit grew, and how the share price behaved through its best years, worst years and deepest falls. Built from Wikipedia, SEC filings and the full price history. Use for questions like "tell me the story of X", "history of X", "how did X get here", "what does X do", "X company background" or "what were X's worst crashes". Covers US stocks and Borsa Istanbul (--market BIST).
+description: Tells the story of a listed company. Covers what it does, where it came from, how revenue and profit grew, and how the share price behaved through its best years, worst years and deepest falls. Built from Wikipedia, SEC filings and the full price history. Use for questions like "tell me the story of X", "history of X", "how did X get here", "what does X do", "X company background" or "what were X's worst crashes". Built for US stocks; Borsa Istanbul works with --market BIST.
 ---
 
 # Company story
