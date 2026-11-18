@@ -10,6 +10,7 @@ ticker) and flags numbers outside plausible ranges. Exit code 1 if anything fail
 import json
 import os
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -21,6 +22,7 @@ TECH = S / "technicals" / "scripts" / "technicals.py"
 STORY = S / "company-story" / "scripts" / "story.py"
 NEWS = S / "news-analyst" / "scripts" / "news.py"
 SCEN = S / "scenarios" / "scripts" / "scenarios.py"
+PORT = S / "portfolio" / "scripts" / "portfolio.py"
 
 # ticker, market -> the Wikipedia article it must land on
 STORIES = [("AAPL", "US", "Apple Inc."), ("XOM", "US", "ExxonMobil"), ("BRK.B", "US", "Berkshire Hathaway"),
@@ -42,8 +44,8 @@ RANGES = [
 ]
 
 
-def call(script, *args):
-    r = subprocess.run([sys.executable, str(script), *args], capture_output=True, timeout=180)
+def call(script, *args, env=None):
+    r = subprocess.run([sys.executable, str(script), *args], capture_output=True, timeout=300, env=env)
     out = r.stdout.decode("utf-8", "replace").strip()
     try:
         return json.loads(out.splitlines()[-1]), r.stderr.decode("utf-8", "replace").strip()
@@ -154,6 +156,26 @@ def main():
             print(f"{'ok ' if good else 'BAD'} scenarios {t}: {res.get('method')} price {res.get('price')} "
                   f"bear/base/bull {px} {res.get('error', '')}"[:200])
         failures += not expect_error("ADR refused", SCEN, "build", "TSM")
+        print("-- portfolio (in a temporary folder, never the user's own)")
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "DESK_HOME": tmp}
+            for args in (("add", "AAPL", "10", "125.07", "--date", "2023-01-03", "--thesis", "t", "--sell-if", "s"),
+                         ("add", "THYAO", "300", "130.8", "--market", "BIST", "--date", "2023-02-01"),
+                         ("add", "PLTR", "100", "7.78", "--date", "2023-05-01"),
+                         ("sell", "PLTR", "50", "67.26", "--date", "2025-01-10", "--reason", "r")):
+                res, _ = call(PORT, *args, env=env)
+                failures += "error" in res
+            for cmd in ("show", "stress", "review"):
+                res, err = call(PORT, cmd, env=env)
+                good = "error" not in res and not err
+                if cmd == "stress":
+                    moves = [e["portfolio_pct"] for e in res.get("past_crashes", [])]
+                    good = good and all(m is not None and -100 < m < 0 for m in moves)
+                failures += not good
+                summary = (f"{res.get('value_usd')} USD, {len(res.get('holdings', []))} holdings" if cmd == "show" else
+                           [(e["episode"], e["portfolio_pct"]) for e in res.get("past_crashes", [])] if cmd == "stress" else
+                           f"{len(res.get('flags', []))} flags, disposition {dig(res, ('disposition', 'reads'))}")
+                print(f"{'ok ' if good else 'BAD'} portfolio {cmd}: {res.get('error') or summary} {err[:80]}"[:200])
         failures += not expect_error("unknown ticker", DESK, "quote", "ZZZZQQ")
         failures += not expect_error("ETF has no statements", FUND, "SPY")
         failures += not expect_error("unknown market", DESK, "quote", "AAPL", "--market", "LSE")

@@ -32,6 +32,7 @@ fundamentals = load_script("skills/fundamentals/scripts/fundamentals.py")
 technicals = load_script("skills/technicals/scripts/technicals.py")
 story = load_script("skills/company-story/scripts/story.py")
 scen = load_script("skills/scenarios/scripts/scenarios.py")
+port = load_script("skills/portfolio/scripts/portfolio.py")
 
 
 def frame(closes, start="2024-01-02", volume=1_000_000):
@@ -579,6 +580,76 @@ class Scenarios(unittest.TestCase):
         self.assertEqual([e["id"] for e in scen.list_entries()["scenarios"]], [b])
         with self.assertRaises(DeskError):
             scen.delete("nope")
+
+
+class Portfolio(unittest.TestCase):
+    def setUp(self):
+        if port.path().exists():
+            port.path().unlink()
+        port._closes.clear()
+        # INTC-like: 25 at the start, 20 by mid-2024, 30 at the end
+        idx = pd.bdate_range("2023-01-02", "2025-12-31")
+        vals = np.interp(np.arange(len(idx)), [0, 400, len(idx) - 1], [25, 20, 30])
+        self.series = pd.Series(vals, index=idx)
+        self.patches = [Patch(port, "raw_closes", lambda sym: self.series),
+                        Patch(port, "closes", lambda sym: self.series),
+                        Patch(prices, "profile", lambda *a, **k: {"sector": "Technology", "country": "United States"})]
+        for p in self.patches:
+            p.__enter__()
+
+    def tearDown(self):
+        for p in reversed(self.patches):
+            p.__exit__(None, None, None)
+
+    def test_scaled_beta_never_below_minus_100(self):
+        self.assertAlmostEqual(port.scaled(-0.10, 1.0), -0.10)
+        self.assertGreater(port.scaled(-0.568, 2.36), -1.0)
+        self.assertAlmostEqual(port.scaled(-0.568, 2.36), 0.432 ** 2.36 - 1)
+
+    def test_add_sell_note_cycle(self):
+        r = port.add("X", 10, 25.0, "US", "2023-01-02", "turnaround", "")
+        self.assertEqual(r["avg_cost"], 25.0)
+        day = str(self.series.index[400].date())
+        r = port.add("X", 10, 20.0, "US", day, "", "")
+        self.assertIn("note", r)  # bought below cost
+        self.assertEqual(r["avg_cost"], 22.5)
+        r = port.sell("X", 5, 30.0, "US", "2025-12-31", "")
+        self.assertAlmostEqual(r["return_pct"], 33.33)
+        self.assertIn("missing", r)  # no reason given
+        with self.assertRaises(DeskError):
+            port.sell("X", 50, 30.0, "US", "2025-12-31", "too many")
+        port.note("X", "still fine", "US", "", "foundry losses widen")
+        data = port.load()
+        pos = data["positions"]["X:US"]
+        self.assertEqual(pos["sell_if"], "foundry losses widen")
+        self.assertEqual(pos["lots"][0]["shares"], 15)
+        self.assertAlmostEqual(pos["lots"][0]["price"], 22.5)  # partial sale keeps the average cost
+        port.sell("X", 15, 30.0, "US", "2025-12-31", "done")
+        data = port.load()
+        self.assertEqual(data["positions"], {})
+        self.assertEqual(len(data["closed"]), 2)
+        self.assertEqual(data["archive"][0]["ticker"], "X")
+
+    def test_price_typo_warning(self):
+        r = port.add("X", 1, 250.0, "US", "2023-01-02", "t", "s")
+        self.assertIn("warning", r)
+
+    def test_concentration(self):
+        rows = [{"weight_pct": w, "sector": s, "country": "US"} for w, s in ((50, "Tech"), (30, "Tech"), (20, "Energy"))]
+        c = port.concentration(rows)
+        self.assertEqual(c["by_sector_pct"], {"Tech": 80.0, "Energy": 20.0})
+        self.assertAlmostEqual(c["effective_positions"], round(1 / (0.25 + 0.09 + 0.04), 1))
+
+    def test_disposition_counts(self):
+        data = {"positions": {
+                    "W:US": {"ticker": "W", "market": "US", "symbol": "W", "lots": [{"date": "2023-01-02", "shares": 1, "price": 10.0}]},
+                    "L:US": {"ticker": "L", "market": "US", "symbol": "L", "lots": [{"date": "2023-01-02", "shares": 1, "price": 99.0}]}},
+                "archive": [],
+                "closed": [{"ticker": "S", "market": "US", "date": "2024-06-03", "return_pct": 40.0}]}
+        d = port.disposition(data)
+        # on the sale day W (cost 10) was at a gain and L (cost 99) at a loss; the sale itself was a gain
+        self.assertEqual((d["gains_sold"], d["gains_kept"], d["losses_sold"], d["losses_kept"]), (1, 1, 0, 1))
+        self.assertEqual(d["reads"], "too few sales to tell")
 
 
 if __name__ == "__main__":

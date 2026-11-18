@@ -12,9 +12,11 @@ Claude skills for researching US stocks with free data. Ask Claude about a compa
 
 **It keeps score.** Save a bear, base and bull case for a stock, and the desk later checks where the price actually went. Over time the scorecard shows whether your ranges are too narrow and whether your base cases lean optimistic, and which assumption tends to miss.
 
+**It reviews your own trading.** The portfolio skill keeps a thesis and a sell condition for every position, replays the 2000, 2008, 2018, 2020 and 2022 crashes on your current weights, and reviews your own trades for the habits that cost individual investors most: selling winners and keeping losers, averaging down, and piling into one sector.
+
 **It runs on free sources only.** yfinance, SEC EDGAR, FRED, BIS, Wikipedia and Google News. Anthropic's own financial-services plugins connect to paid providers such as FactSet, and most finance MCP servers need an API key.
 
-**It is tested.** 50 offline tests with hand-checked answers, plus a live check that runs every script on companies picked to break naive code: share classes (BRK.B), foreign ADRs that report in another currency (TSM, BABA), banks (JPM), an ETF and an unknown ticker.
+**It is tested.** 55 offline tests with hand-checked answers, plus a live check that runs every script on companies picked to break naive code: share classes (BRK.B), foreign ADRs that report in another currency (TSM, BABA), banks (JPM), an ETF and an unknown ticker.
 
 **It is cheap on tokens.** The scripts do the arithmetic and print one line of JSON. A price check is about 200 tokens, a fundamentals report with three peers under 2,000.
 
@@ -28,9 +30,10 @@ Claude skills for researching US stocks with free data. Ask Claude about a compa
 | `technicals` | "What does the AAPL chart say?" Trend, RSI, MACD, volatility, support and resistance, performance against the S&P 500 |
 | `company-story` | "Tell me the story of Exxon." What it does, its turning points, 15 years of results, the deepest share-price falls and how long recovery took |
 | `news-analyst` | "Why did JPM move this week?" Recent headlines and 8-K filings, sorted into what could help the business, what could hurt it, and noise |
+| `portfolio` | "Add 10 AAPL at 180", "How would my portfolio do in a crash?", "Review my trades." Positions with a thesis and sell condition, crash replays, and a review of your trading habits |
 | `scenarios` | "Bull and bear case for Microsoft", "What growth is priced into Nvidia?", "How did my past calls do?" Cases from ten years of 10-K figures, the growth today's price assumes, and a scorecard for saved views |
 
-Coming next: `portfolio` (a thesis journal and stress test) and `committee` (bull and bear analysts argue the case and the desk writes a one-page report).
+Coming next: `committee` (bull and bear analysts argue the case and the desk writes a one-page report).
 
 ## Install
 
@@ -56,7 +59,7 @@ Then ask Claude to "set up the equity desk". The SEC asks automated clients for 
 
 yfinance is not affiliated with Yahoo. Yahoo's terms allow personal use of its data; check them before using the desk for anything else.
 
-Downloads are cached in `~/.ai-equity-desk/`: prices for 15 minutes, news for an hour, statements for a week, Wikipedia articles for a month.
+Your portfolio and saved scenarios are kept in `~/.ai-equity-desk/` as plain JSON files. They stay on your computer; only ticker symbols go out, to fetch prices. Downloads are cached there too: prices for 15 minutes, news for an hour, statements for a week, Wikipedia articles for a month.
 
 ## Running the scripts yourself
 
@@ -68,6 +71,7 @@ python skills/technicals/scripts/technicals.py MSFT
 python skills/company-story/scripts/story.py XOM
 python skills/news-analyst/scripts/news.py JPM --days 7
 python skills/scenarios/scripts/scenarios.py build MSFT --years 5
+python skills/portfolio/scripts/portfolio.py stress
 ```
 
 ## Other markets
