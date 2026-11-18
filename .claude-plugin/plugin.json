@@ -1,0 +1,7 @@
+{
+  "name": "ai-equity-desk",
+  "version": "0.1.0",
+  "description": "Your own AI equity research desk: a team of specialist skills that analyze stocks locally with free data (yfinance, SEC EDGAR, FRED). Not financial advice.",
+  "author": { "name": "coraltechh" },
+  "keywords": ["stocks", "equity-research", "finance", "investing", "sec-edgar", "fred", "yfinance"]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "ai-equity-desk",
+  "owner": { "name": "coraltechh" },
+  "plugins": [
+    {
+      "name": "ai-equity-desk",
+      "source": "./",
+      "description": "AI equity research desk: specialist skills for stock analysis with free data. Not financial advice."
+    }
+  ]
+}
