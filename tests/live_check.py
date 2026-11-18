@@ -20,6 +20,7 @@ FUND = S / "fundamentals" / "scripts" / "fundamentals.py"
 TECH = S / "technicals" / "scripts" / "technicals.py"
 STORY = S / "company-story" / "scripts" / "story.py"
 NEWS = S / "news-analyst" / "scripts" / "news.py"
+SCEN = S / "scenarios" / "scripts" / "scenarios.py"
 
 # ticker, market -> the Wikipedia article it must land on
 STORIES = [("AAPL", "US", "Apple Inc."), ("XOM", "US", "ExxonMobil"), ("BRK.B", "US", "Berkshire Hathaway"),
@@ -143,6 +144,16 @@ def main():
             good = n.get("found", 0) >= 3 and not n.get("source_errors")
             failures += not good
             print(f"{'ok ' if good else 'BAD'} news {t}: {n.get('found')} items, {n.get('topic_counts')} {n.get('source_errors', '')}"[:200])
+        print("-- scenarios")
+        for t, market in (("AAPL", "US"), ("NVDA", "US"), ("JPM", "US"), ("KO", "US"), ("TSLA", "US"),
+                          ("THYAO", "BIST")):
+            res, _ = call(SCEN, "build", t, "--market", market)
+            px = [dig(res, ("cases", c, "price")) for c in ("bear", "base", "bull")]
+            good = "error" not in res and None not in px and px[0] <= px[1] <= px[2]
+            failures += not good
+            print(f"{'ok ' if good else 'BAD'} scenarios {t}: {res.get('method')} price {res.get('price')} "
+                  f"bear/base/bull {px} {res.get('error', '')}"[:200])
+        failures += not expect_error("ADR refused", SCEN, "build", "TSM")
         failures += not expect_error("unknown ticker", DESK, "quote", "ZZZZQQ")
         failures += not expect_error("ETF has no statements", FUND, "SPY")
         failures += not expect_error("unknown market", DESK, "quote", "AAPL", "--market", "LSE")

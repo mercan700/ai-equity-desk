@@ -7,7 +7,7 @@ import time
 from .config import CACHE_DIR
 
 # Bump when the shape of cached data changes, so old files are ignored.
-VERSION = 5
+VERSION = 6
 
 # Seconds each kind of data stays fresh.
 TTL = {

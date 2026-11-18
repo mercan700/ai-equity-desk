@@ -36,7 +36,7 @@ Source: yfinance, fiscal year ending <latest_fiscal_year>, <currency> millions
 
 What stands out: 2 to 4 points, each tied to a number in the table.
 What would change the picture: 2 or 3 numbers to watch in the next reports.
-Data check: for US companies, the `verification` result in one line, e.g. "16 of 16 figures match the 10-K filed with the SEC". Name every item listed under `differences`.
+Data check: for US companies, the `verification` result in one line, e.g. "18 of 18 figures match the 10-K filed with the SEC". Name every item listed under `differences`.
 Caveats: every item from the `caveats` list, in plain words, plus anything else that looks off.
 
 This is a summary of public data, not investment advice.

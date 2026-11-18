@@ -21,13 +21,14 @@ CONCEPTS = {
     "Total Assets": ["Assets"],
     "Stockholders Equity": ["StockholdersEquity"],
     "Cash And Cash Equivalents": ["CashAndCashEquivalentsAtCarryingValue"],
+    "Diluted Average Shares": ["WeightedAverageNumberOfDilutedSharesOutstanding"],
 }
 INSTANT = {"Total Assets", "Stockholders Equity", "Cash And Cash Equivalents"}
 TOLERANCE_PCT = 2.0
 
 
 def _annual(facts, tags, instant):
-    """{period_end: value} from 10-K filings.
+    """{period_end: (value, filed_date)} from 10-K filings.
 
     Within a tag the latest filing wins, so restatements replace the original.
     Across tags the earlier tag in `tags` wins for a given year, and later tags
@@ -51,7 +52,7 @@ def _annual(facts, tags, instant):
                 if prev is None or r.get("filed", "") >= prev[1]:
                     found[r["end"]] = (r["val"], r.get("filed", ""))
         for end, v in found.items():
-            out.setdefault(end, v[0])
+            out.setdefault(end, v)
     return out
 
 
@@ -61,8 +62,11 @@ def sec_annuals(ticker):
     if data is None:
         raw = sec._get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json").json()
         gaap = raw.get("facts", {}).get("us-gaap", {})
-        data = {row: _annual(gaap, tags, row in INSTANT) for row, tags in CONCEPTS.items()}
-        if not any(data.values()):
+        found = {row: _annual(gaap, tags, row in INSTANT) for row, tags in CONCEPTS.items()}
+        data = {row: {end: v for end, (v, _) in vals.items()} for row, vals in found.items()}
+        # When each figure was filed: per-share numbers in a 10-K predate any later split.
+        data["_filed"] = {row: {end: f for end, (_, f) in vals.items()} for row, vals in found.items()}
+        if not any(data[row] for row in CONCEPTS):
             data["_reason"] = ("files under IFRS rather than US GAAP (foreign filer)" if not gaap
                                else "no annual 10-K figures under this SEC registration yet, only quarterly filings")
         cache.put_json("facts", cik, data)

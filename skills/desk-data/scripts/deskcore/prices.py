@@ -38,12 +38,15 @@ def _pct(a, b):
     return _num((a / b - 1) * 100)
 
 
-def load_history(sym, period="1y", interval="1d", kind="history"):
-    """OHLCV DataFrame, cached as CSV. Other skills call this, Claude never reads the CSV."""
-    path = cache.path_for(kind, f"{sym}:{period}:{interval}", "csv")
+def load_history(sym, period="1y", interval="1d", kind="history", dividends_adjusted=True):
+    """OHLCV DataFrame, cached as CSV. Other skills call this, Claude never reads the CSV.
+
+    Prices are always split-adjusted. dividends_adjusted=False keeps the price that
+    actually traded (before dividend adjustment), which is what a P/E is computed from."""
+    path = cache.path_for(kind, f"{sym}:{period}:{interval}:{'tr' if dividends_adjusted else 'px'}", "csv")
     if cache.fresh(path, kind):
         return pd.read_csv(path, index_col=0, parse_dates=True), path
-    df = _yf().Ticker(sym).history(period=period, interval=interval, auto_adjust=True)
+    df = _yf().Ticker(sym).history(period=period, interval=interval, auto_adjust=dividends_adjusted)
     if df is None or df.empty:
         raise DeskError(f"No price data for '{sym}'. Check the ticker and market.")
     if df.index.tz is not None:

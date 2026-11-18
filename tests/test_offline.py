@@ -31,6 +31,7 @@ def load_script(rel):
 fundamentals = load_script("skills/fundamentals/scripts/fundamentals.py")
 technicals = load_script("skills/technicals/scripts/technicals.py")
 story = load_script("skills/company-story/scripts/story.py")
+scen = load_script("skills/scenarios/scripts/scenarios.py")
 
 
 def frame(closes, start="2024-01-02", volume=1_000_000):
@@ -364,7 +365,7 @@ class Verification(unittest.TestCase):
 
     def test_annual_values_keep_latest_filing_and_skip_quarters(self):
         out = verify._annual(self.FACTS, ["Revenues"], instant=False)
-        self.assertEqual(out, {"2024-12-31": 1010e6})
+        self.assertEqual(out, {"2024-12-31": (1010e6, "2026-02-01")})
 
     def test_nearest_date(self):
         self.assertEqual(verify._nearest({"2026-01-25": 5}, "2026-01-31"), 5)
@@ -483,6 +484,101 @@ class News(unittest.TestCase):
         self.assertEqual(out["found"], 1)
         self.assertEqual(out["dropped_off_topic"], 1)
         self.assertEqual(out["items"][0]["topics"], ["earnings"])
+
+
+class Scenarios(unittest.TestCase):
+    def test_quantile_and_rank(self):
+        self.assertEqual(scen.quantile([1, 2, 3, 4, 5], 0.5), 3)
+        self.assertAlmostEqual(scen.quantile([0, 10], 0.2), 2)
+        self.assertIsNone(scen.quantile([], 0.5))
+        self.assertEqual(scen.percentile_rank([1, 2, 3, 4], 3), 75)
+
+    def test_split_adjusted_eps_from_old_filings(self):
+        # Apple's 2017 EPS of 9.21 was filed in 2019, before the 4:1 split of 2020.
+        facts = {"Total Revenue": {"2017-09-30": 229e9}, "Net Income": {"2017-09-30": 48.35e9},
+                 "Diluted EPS": {"2017-09-30": 9.21}, "Diluted Average Shares": {"2017-09-30": 5.25e9},
+                 "_filed": {"Diluted EPS": {"2017-09-30": "2019-10-31"},
+                            "Diluted Average Shares": {"2017-09-30": "2019-10-31"}}}
+        with Patch(verify, "sec_annuals", lambda t: facts), \
+                Patch(scen, "split_factors", lambda sym: [["2014-06-09", 7.0], ["2020-08-31", 4.0]]):
+            y = scen.sec_years("AAPL", "AAPL")["2017-09-30"]
+        self.assertAlmostEqual(y["shares"], 21000.0)  # millions, in today's share count
+
+    def test_growth_fades_to_anchor(self):
+        self.assertAlmostEqual(scen.revenue_after(100, 0.05, 3, 0.05), 100 * 1.05 ** 3)
+        # 30% fading to 5% over ten years: 27.5%, 25%, 22.5% in the first three years
+        self.assertAlmostEqual(scen.revenue_after(100, 0.30, 3, 0.05), 100 * 1.275 * 1.25 * 1.225)
+
+    def test_defaults_clamp_base_multiple(self):
+        rows = [{"end": f"{2015 + i}-12-31", "revenue": 100 * 1.05 ** i, "net_income": 10 * 1.05 ** i,
+                 "margin": 0.10, "shares": 100.0, "pe": pe} for i, pe in enumerate([10, 12, 14, 16, 18, 20])]
+        method, cases, share_change, _ = scen.defaults(rows, 3, multiple_now=40)
+        self.assertEqual(method, "pe")
+        self.assertAlmostEqual(cases["base"]["multiple"], cases["bull"]["multiple"])  # 40 pulled back to p80
+        self.assertLess(cases["bear"]["multiple"], cases["base"]["multiple"])
+        self.assertAlmostEqual(cases["base"]["growth"], 0.05, places=3)
+        self.assertAlmostEqual(share_change, 0.0)
+        _, cases, _, _ = scen.defaults(rows, 3, multiple_now=15)
+        self.assertEqual(cases["base"]["multiple"], 15)  # inside the range: today's multiple
+
+    def test_loss_maker_uses_price_to_sales(self):
+        rows = [{"end": f"{2018 + i}-12-31", "revenue": 50.0 * (i + 1), "net_income": -10.0, "margin": -0.2,
+                 "shares": 10.0, "ps": 5.0 + i} for i in range(5)]
+        method, cases, _, _ = scen.defaults(rows, 3)
+        self.assertEqual(method, "ps")
+        self.assertIsNone(cases["base"]["margin"])
+        self.assertLessEqual(cases["bull"]["growth"], scen.MAX_GROWTH)
+
+    def test_overrides(self):
+        cases = {c: {"growth": 0.05, "margin": 0.1, "multiple": 15} for c in scen.CASES}
+        shares = scen.apply_overrides(cases, ["bear.growth=-2", "bull.multiple=30", "shares=-1.5"])
+        self.assertAlmostEqual(cases["bear"]["growth"], -0.02)
+        self.assertEqual(cases["bull"]["multiple"], 30)
+        self.assertAlmostEqual(shares, -0.015)
+        with self.assertRaises(DeskError):
+            scen.apply_overrides(cases, ["base.price=100"])
+
+    def test_position_and_band(self):
+        path = {"bear": 80.0, "base": 100.0, "bull": 125.0}
+        self.assertAlmostEqual(scen.position(100.0, path), 0.5)
+        self.assertAlmostEqual(scen.position(80.0, path), 0.0)
+        self.assertAlmostEqual(scen.position(125.0, path), 1.0)
+        self.assertGreater(scen.position(200.0, path), 1.0)
+        self.assertEqual(scen.band(70.0, path), "below bear")
+        self.assertEqual(scen.band(110.0, path), "between base and bull")
+
+    def test_score_entry_uses_path_to_date(self):
+        # saved at 100 one year into a 2-year case whose base ends at 121: base path is 110 by now
+        closes = [100.0] * 260 + [110.0] * 10
+        df = frame(closes, start="2024-01-01")
+        entry = {"id": "X-1", "ticker": "X", "market": "US", "symbol": "X", "saved": "2024-01-01",
+                 "price_date": "2024-01-01", "price": 100.0, "years": 2, "benchmark": "^GSPC",
+                 "start": {"period_end": "2023-12-31", "revenue_m": 1000},
+                 "cases": {"bear": {"price": 81.0}, "base": {"price": 121.0}, "bull": {"price": 144.0}}}
+        today = df.index[-1].date()
+        with Patch(prices, "load_history", lambda *a, **k: (df, None)), \
+                Patch(scen, "history", lambda *a: {"rows": []}):
+            r = scen.score_entry(entry, today)
+        frac = scen.years_between("2024-01-01", today) / 2
+        self.assertEqual(r["status"], "in progress")
+        self.assertAlmostEqual(r["expected_by_now_pct"]["base"], round((1.21 ** frac - 1) * 100, 2))
+        self.assertEqual(r["price_change_pct"], 10.0)
+
+    def test_journal_roundtrip(self):
+        fake = {"symbol": "X", "price": 10.0, "price_date": "2026-01-02", "benchmark": "^GSPC", "method": "P/E",
+                "start": {"period_end": "2025-12-31"},
+                "cases": {c: {"price": p, "assumptions": {"revenue_growth_pct": 5}} for c, p in
+                          zip(scen.CASES, (8.0, 11.0, 14.0))}}
+        with Patch(scen, "build", lambda *a, **k: fake), \
+                Patch(prices, "quote", lambda *a, **k: {"close": 5000.0, "date": "2026-01-02"}):
+            a = scen.save("X", "US", 3, [], "first")["saved"]["id"]
+            b = scen.save("X", "US", 3, [], "second")["saved"]["id"]
+        self.assertNotEqual(a, b)
+        self.assertEqual(len(scen.list_entries()["scenarios"]), 2)
+        scen.delete(a)
+        self.assertEqual([e["id"] for e in scen.list_entries()["scenarios"]], [b])
+        with self.assertRaises(DeskError):
+            scen.delete("nope")
 
 
 if __name__ == "__main__":

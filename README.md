@@ -6,13 +6,15 @@ Claude skills for researching US stocks with free data. Ask Claude about a compa
 
 ## What makes it different
 
-**It checks the data.** Free stock data comes from Yahoo Finance, and Yahoo is sometimes wrong. The desk compares Yahoo's statement figures with the 10-K figures the company filed with the SEC and reports how many matched. Apple and Microsoft match 16 of 16. Coca-Cola matches 14 of 16: Yahoo's operating income for 2025 is $14.9bn, the 10-K says $13.8bn. Every fundamentals report carries that check, so you know when to trust a ratio.
+**It checks the data.** Free stock data comes from Yahoo Finance, and Yahoo is sometimes wrong. The desk compares Yahoo's statement figures with the 10-K figures the company filed with the SEC and reports how many matched. Apple and Microsoft match 18 of 18. Coca-Cola matches 16 of 18: Yahoo's operating income for 2025 is $14.9bn, the 10-K says $13.8bn. Every fundamentals report carries that check, so you know when to trust a ratio.
 
 **It reads what the company said, not only what was written about it.** The company story uses 15 years of revenue and profit from 10-K filings. The news brief lists the 8-K filings from the same weeks next to the headlines, and when a headline and a filing disagree, the filing wins.
 
+**It keeps score.** Save a bear, base and bull case for a stock, and the desk later checks where the price actually went. Over time the scorecard shows whether your ranges are too narrow and whether your base cases lean optimistic, and which assumption tends to miss.
+
 **It runs on free sources only.** yfinance, SEC EDGAR, FRED, BIS, Wikipedia and Google News. Anthropic's own financial-services plugins connect to paid providers such as FactSet, and most finance MCP servers need an API key.
 
-**It is tested.** 41 offline tests with hand-checked answers, plus a live check that runs every script on companies picked to break naive code: share classes (BRK.B), foreign ADRs that report in another currency (TSM, BABA), banks (JPM), an ETF and an unknown ticker.
+**It is tested.** 50 offline tests with hand-checked answers, plus a live check that runs every script on companies picked to break naive code: share classes (BRK.B), foreign ADRs that report in another currency (TSM, BABA), banks (JPM), an ETF and an unknown ticker.
 
 **It is cheap on tokens.** The scripts do the arithmetic and print one line of JSON. A price check is about 200 tokens, a fundamentals report with three peers under 2,000.
 
@@ -26,8 +28,9 @@ Claude skills for researching US stocks with free data. Ask Claude about a compa
 | `technicals` | "What does the AAPL chart say?" Trend, RSI, MACD, volatility, support and resistance, performance against the S&P 500 |
 | `company-story` | "Tell me the story of Exxon." What it does, its turning points, 15 years of results, the deepest share-price falls and how long recovery took |
 | `news-analyst` | "Why did JPM move this week?" Recent headlines and 8-K filings, sorted into what could help the business, what could hurt it, and noise |
+| `scenarios` | "Bull and bear case for Microsoft", "What growth is priced into Nvidia?", "How did my past calls do?" Cases from ten years of 10-K figures, the growth today's price assumes, and a scorecard for saved views |
 
-Coming next: `scenarios` (bear, base and bull cases with a scorecard that tracks how past scenarios turned out), `portfolio` (a thesis journal and stress test) and `committee` (bull and bear analysts argue the case and the desk writes a one-page report).
+Coming next: `portfolio` (a thesis journal and stress test) and `committee` (bull and bear analysts argue the case and the desk writes a one-page report).
 
 ## Install
 
@@ -64,6 +67,7 @@ python skills/fundamentals/scripts/fundamentals.py COST --peers WMT TGT
 python skills/technicals/scripts/technicals.py MSFT
 python skills/company-story/scripts/story.py XOM
 python skills/news-analyst/scripts/news.py JPM --days 7
+python skills/scenarios/scripts/scenarios.py build MSFT --years 5
 ```
 
 ## Other markets

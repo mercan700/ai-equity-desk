@@ -1,7 +1,7 @@
 {
   "name": "ai-equity-desk",
-  "version": "0.4.0",
-  "description": "Claude skills for researching US stocks with free data: fundamentals checked against SEC filings, technicals, company history and news. No API keys. Not investment advice.",
+  "version": "0.5.0",
+  "description": "Claude skills for researching US stocks with free data: fundamentals checked against SEC filings, technicals, company history, news, and scenarios with a scorecard. No API keys. Not investment advice.",
   "author": {
     "name": "coraltechh"
   },
