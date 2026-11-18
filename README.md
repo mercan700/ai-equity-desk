@@ -10,8 +10,8 @@
 |---|---|---|
 | `desk-setup` | ✅ v0.1 | Checks Python, installs packages, tests every data source |
 | `desk-data` | ✅ v0.1 | Shared data layer: prices, history, profile, financials, SEC filings, FRED macro, world markets |
-| `fundamentals` | 🔜 | Business quality, margins, growth, balance sheet, peers |
-| `technicals` | 🔜 | Trend, momentum, support/resistance, volatility |
+| `fundamentals` | ✅ v0.2 | Business quality, margins, growth, balance sheet, peers |
+| `technicals` | ✅ v0.2 | Trend, momentum, support/resistance, volatility |
 | `company-story` | 🔜 | Company history, business model and turning points from 10-K filings |
 | `news-analyst` | 🔜 | Filters the news to catalysts and risks |
 | `scenarios` | 🔜 | Bear / base / bull price ranges with probabilities and macro sensitivity |

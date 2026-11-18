@@ -110,6 +110,7 @@ PROFILE_KEYS = {
     "trailingPE": "pe_ttm", "forwardPE": "pe_forward", "priceToBook": "pb",
     "enterpriseToEbitda": "ev_ebitda", "dividendYield": "dividend_yield",
     "payoutRatio": "payout_ratio", "beta": "beta", "sharesOutstanding": "shares",
+    "financialCurrency": "financial_currency",
 }
 
 
@@ -136,7 +137,7 @@ def profile(ticker, market="US", summary_chars=600):
 # Statement rows we keep, in the order an analyst reads them. Values in millions.
 ROWS = {
     "income": ["Total Revenue", "Gross Profit", "Operating Income", "EBITDA",
-               "Net Income", "Diluted EPS"],
+               "Net Income", "Diluted EPS", "Diluted Average Shares"],
     "balance": ["Total Assets", "Cash And Cash Equivalents", "Total Debt",
                 "Stockholders Equity"],
     "cashflow": ["Operating Cash Flow", "Capital Expenditure", "Free Cash Flow"],
