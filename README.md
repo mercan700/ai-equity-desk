@@ -78,3 +78,9 @@ python tests/live_check.py                # live, a few minutes
 ```
 
 The live check flags ratios outside plausible ranges and confirms that the company-story skill lands on the right Wikipedia article for companies whose names trip up a search.
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE). In short: you can use, change and share the desk for personal use with no commercial application (study, research, hobby projects), and charities, schools, public research bodies and government institutions can use it too. Using it in a business, in a paid product or service, or to manage money for clients needs a commercial license from coraltechh: [open an issue](https://github.com/mercan700/ai-equity-desk/issues) to ask. The LICENSE file is what counts.
+
+The data the desk fetches has its own terms. Yahoo Finance data in particular is for personal use.
