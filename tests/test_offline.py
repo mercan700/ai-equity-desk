@@ -3,6 +3,7 @@
 Run from the repo root:  python -m unittest discover -s tests -v
 """
 import importlib.util
+import json
 import math
 import os
 import sys
@@ -37,6 +38,7 @@ port = load_script("skills/portfolio/scripts/portfolio.py")
 screener = load_script("skills/screener/scripts/screener.py")
 market = load_script("skills/market/scripts/market.py")
 smart = load_script("skills/smart-money/scripts/smartmoney.py")
+committee = load_script("skills/committee/scripts/committee.py")
 
 
 def frame(closes, start="2024-01-02", volume=1_000_000):
@@ -968,6 +970,105 @@ class PreTradeCheck(unittest.TestCase):
         self.assertAlmostEqual(out["max_shares_within_limits"]["by_risk"], round(100 / 0.9, 1))
         # weight: 10x / (10000 + 10x) = 0.2  ->  x = 250
         self.assertAlmostEqual(out["max_shares_within_limits"]["by_position_weight"], 250.0)
+
+
+
+def committee_data():
+    chart = [[f"2025-{m:02d}-01", 100.0 + m, 98.0 + m if m > 3 else None] for m in range(1, 13)]
+    return {"ticker": "TST", "market": "US", "gathered": "2026-11-18T10:00", "chart": chart, "sections": {
+        "fundamentals": {"name": "Test Corp", "currency": "USD", "sector": "Tech",
+                         "growth": {"revenue_cagr_pct": 12.4}, "valuation": {"pe_ttm": 18.2},
+                         "cash_quality": {"fcf_to_net_income": 0.62}, "verification": {"matched": "18/18"}},
+        "technicals": {"close": 112.0, "date": "2026-11-18", "trend": {"label": "uptrend"},
+                       "volatility": {"max_drawdown_1y_pct": -21.5}},
+        "scenarios": {"price": 112.0, "price_date": "2026-11-18", "years": 3, "method": "P/E", "cases": {
+            k: {"assumptions": {"revenue_growth_pct": g, "net_margin_pct": 10.0, "exit_pe": 15.0},
+                "price": pr, "annual_return_pct": r} for k, g, pr, r in
+            (("bear", 3.0, 80.0, -10.6), ("base", 7.0, 130.0, 5.1), ("bull", 11.0, 190.0, 19.3))},
+            "growth_needed_pct": {"to_hold_price": 4.2}, "history": {"source": "10-K", "years": "2016-2026"}},
+        "news": {"error": "no connection"},
+    }}
+
+
+def committee_views():
+    pt = lambda c, s="fundamentals": {"claim": c, "source": s}  # noqa: E731
+    return {
+        "bull": {"thesis": "Growing and cheap.", "points": [pt("Revenue grew 12.4% a year."), pt("P/E is 18.2.")]},
+        "bear": {"thesis": "Cash is weak.", "points": [
+            pt("Free cash flow is 0.62 times net income."), pt("The bear case ends near 80.", "scenarios"),
+            pt("It fell 21.5% in the last year.", "technicals")]},
+        "risk": {"thesis": "Volatile.", "points": [pt("Max drawdown was 21.5%.", "technicals")]},
+        "chair": {"leans": "split", "summary": "Mixed.", "would_change_mind": "Better cash flow."}}
+
+
+class Committee(unittest.TestCase):
+    def test_numbers_in_claims(self):
+        nums = [raw for _, raw in committee.numbers_in(
+            "Over 3 years since 2016 revenue rose 12.4% to $3.8 billion; (130 - 112) / 112 = 16% on 2026-11-18")]
+        self.assertEqual(nums, ["12.4%", "$3.8billion", "130", "112", "112"])
+
+    def test_supported_with_rounding_and_units(self):
+        pool = [12.43, 3812.0, 0.62]
+        self.assertTrue(committee.supported(12.4, "12.4%", pool))
+        self.assertTrue(committee.supported(3.8, "$3.8billion", pool))   # millions shown as billions
+        self.assertTrue(committee.supported(62, "62%", pool))            # a ratio shown as percent
+        self.assertFalse(committee.supported(14.0, "14.0%", pool))
+
+    def test_good_views_pass(self):
+        errors, unverified = committee.check_views(committee_views(), committee_data())
+        self.assertEqual(errors, [])
+        self.assertEqual(unverified, [])
+
+    def test_bear_case_is_required(self):
+        v = committee_views()
+        v["bear"]["points"] = v["bear"]["points"][:2]
+        errors, _ = committee.check_views(v, committee_data())
+        self.assertTrue(any("bear case needs at least 3" in e for e in errors))
+        del v["bear"]
+        errors, _ = committee.check_views(v, committee_data())
+        self.assertIn("'bear' needs a thesis.", errors)
+
+    def test_one_sided_and_bad_sources_refused(self):
+        v = committee_views()
+        v["bull"]["points"] = v["bull"]["points"] * 3
+        v["risk"]["points"].append({"claim": "Headlines are bad.", "source": "news"})
+        v["chair"]["leans"] = "buy"
+        errors, _ = committee.check_views(v, committee_data())
+        self.assertTrue(any("Give the bear case as much work" in e for e in errors))
+        self.assertTrue(any("source 'news'" in e for e in errors))       # news failed in this data
+        self.assertTrue(any("chair.leans" in e for e in errors))
+
+    def test_unverified_number_is_flagged(self):
+        v = committee_views()
+        v["bull"]["points"][1]["claim"] = "P/E is 31.7."
+        errors, unverified = committee.check_views(v, committee_data())
+        self.assertEqual(errors, [])
+        self.assertEqual(unverified, [{"seat": "bull", "point": 2, "numbers": ["31.7"]}])
+
+    def test_report_html(self):
+        data = committee_data()
+        page = committee.render(data, committee_views(), [{"seat": "bull", "point": 1, "numbers": ["12.4%"]}])
+        self.assertIn("Strongest case against:</b> Cash is weak.", page)
+        self.assertLess(page.index("Bear analyst"), page.index("Bull analyst"))
+        self.assertIn("bear 80", page)
+        self.assertIn("Price in 2029", page)
+        self.assertIn("check: 12.4%", page)
+        self.assertIn("news: no connection", page)
+        self.assertNotIn("<script", page)
+
+    def test_report_refuses_then_builds(self):
+        data = committee_data()
+        d = committee.out_dir() / "TST-2026-11-18.json"
+        d.write_text(json.dumps(data), encoding="utf-8")
+        v = committee_views()
+        v["bear"]["points"] = []
+        committee.views_path(d).write_text(json.dumps(v), encoding="utf-8")
+        out = committee.report("TST")
+        self.assertFalse(out["built"])
+        committee.views_path(d).write_text(json.dumps(committee_views()), encoding="utf-8")
+        out = committee.report("TST")
+        self.assertTrue(out["built"])
+        self.assertTrue(Path(out["report"]).read_text(encoding="utf-8").startswith("<!doctype html>"))
 
 
 if __name__ == "__main__":

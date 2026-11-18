@@ -1,7 +1,7 @@
 {
   "name": "stock-trader-skills",
-  "version": "0.7.0",
-  "description": "Claude skills for stock traders, built on free data. Stock screener, market regime and economic calendar, 13F fund holdings, insider and Congress trades, fundamentals checked against SEC filings, technical analysis with backtests, company history, news, bull and bear scenarios with a scorecard, and a portfolio journal with pre-trade risk checks, crash tests and a review of your trading habits. No API keys. Does not place trades. Not investment advice.",
+  "version": "0.8.0",
+  "description": "Claude skills for stock traders, built on free data. An investment committee that argues the bull, bear and risk case and writes a one-page HTML report. Stock screener, market regime and economic calendar, 13F fund holdings, insider and Congress trades, fundamentals checked against SEC filings, technical analysis with backtests, company history, news, scenarios with a scorecard, and a portfolio journal with pre-trade risk checks. No API keys. Does not place trades. Not investment advice.",
   "author": {
     "name": "coraltechh"
   },
@@ -11,6 +11,7 @@
     "13f",
     "ai-trading",
     "backtesting",
+    "bull-bear",
     "claude",
     "claude-code",
     "congress-trading",
@@ -19,12 +20,14 @@
     "fundamental-analysis",
     "insider-trading",
     "investing",
+    "investment-committee",
     "market-breadth",
     "portfolio",
     "risk-management",
     "sec-edgar",
     "stock-analysis",
     "stock-market",
+    "stock-report",
     "stock-screener",
     "stock-trading",
     "stocks",

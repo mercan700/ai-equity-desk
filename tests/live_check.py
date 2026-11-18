@@ -26,6 +26,7 @@ PORT = S / "portfolio" / "scripts" / "portfolio.py"
 SCREEN = S / "screener" / "scripts" / "screener.py"
 MARKET = S / "market" / "scripts" / "market.py"
 SMART = S / "smart-money" / "scripts" / "smartmoney.py"
+COMMITTEE = S / "committee" / "scripts" / "committee.py"
 
 # ticker, market -> the Wikipedia article it must land on
 STORIES = [("AAPL", "US", "Apple Inc."), ("XOM", "US", "ExxonMobil"), ("BRK.B", "US", "Berkshire Hathaway"),
@@ -232,6 +233,37 @@ def main():
             print(f"{'ok ' if good else 'BAD'} congress 30 days: {res.get('reports_read')} reports, "
                   f"{res.get('stock_trades')} trades, top {[r['ticker'] for r in res.get('most_bought', [])[:5]]} "
                   f"{res.get('error', '')}"[:200])
+        print("-- committee (in a temporary folder)")
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "DESK_HOME": tmp}
+            res, _ = call(COMMITTEE, "gather", "AAPL", env=env)
+            sec = res.get("sections", {})
+            allowed = {"insiders"} if not os.environ.get("DESK_SEC_USER_AGENT") else set()
+            good = "error" not in res and not (set(res.get("missing", {})) - allowed) and len(sec) >= 7
+            failures += not good
+            print(f"{'ok ' if good else 'BAD'} committee gather AAPL: {sorted(sec)} missing {res.get('missing')} "
+                  f"{res.get('error', '')}"[:200])
+            if good:
+                f, t, sc = sec["fundamentals"], sec["technicals"], sec["scenarios"]
+                pt = lambda c, src: {"claim": c, "source": src}  # noqa: E731
+                views = {
+                    "bull": {"thesis": "t", "points": [
+                        pt(f"Operating margin is {dig(f, ('profitability', 'operating_margin_pct'))}%.", "fundamentals")]},
+                    "bear": {"thesis": "t", "points": [
+                        pt(f"The bear case ends near {dig(sc, ('cases', 'bear', 'price'))}.", "scenarios"),
+                        pt(f"P/E is {dig(f, ('valuation', 'pe_ttm'))}.", "fundamentals"),
+                        pt(f"RSI is {dig(t, ('momentum', 'rsi14'))} and P/E is 97.13.", "technicals")]},
+                    "risk": {"thesis": "t", "points": [
+                        pt(f"ATR is {dig(t, ('volatility', 'atr14_pct'))}%.", "technicals")]},
+                    "chair": {"leans": "split", "summary": "s", "would_change_mind": "w"}}
+                Path(res["views_file"]).write_text(json.dumps(views), encoding="utf-8")
+                out, _ = call(COMMITTEE, "report", "AAPL", env=env)
+                page = Path(out.get("report", "")).read_text(encoding="utf-8") if out.get("built") else ""
+                flagged = [n for u in out.get("unverified_numbers", []) for n in u["numbers"]]
+                good = out.get("built") and "<polyline" in page and "Bear analyst" in page and flagged == ["97.13"]
+                failures += not good
+                print(f"{'ok ' if good else 'BAD'} committee report: built {out.get('built')}, "
+                      f"{len(page)} bytes, flagged {flagged} {out.get('errors', '')} {out.get('error', '')}"[:200])
         failures += not expect_error("unknown ticker", DESK, "quote", "ZZZZQQ")
         failures += not expect_error("ETF has no statements", FUND, "SPY")
         failures += not expect_error("unknown market", DESK, "quote", "AAPL", "--market", "LSE")

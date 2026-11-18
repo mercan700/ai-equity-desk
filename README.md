@@ -6,6 +6,10 @@ Claude Code skills for stock traders and investors, built on free data. They res
 
 ## What makes it different
 
+**It argues both sides.** Ask for a committee report and three analysts work from the same data: one for the stock, one against it, one on what could go wrong either way. The result is a one-page HTML report with a price chart and the bear-to-bull range. The report will not build without a bear case at least as thorough as the bull case, and any number in an argument that is not in the gathered data gets marked on the page.
+
+![A committee report for Microsoft](docs/committee-report.png)
+
 **It checks the data.** Free stock data comes from Yahoo Finance, and Yahoo is sometimes wrong. The fundamentals skill compares Yahoo's statement figures with the 10-K figures the company filed with the SEC and reports how many matched. Apple and Microsoft match 18 of 18. Coca-Cola matches 16 of 18: Yahoo's operating income for 2025 is $14.9bn, the 10-K says $13.8bn. Every fundamentals report carries that check, so you know when to trust a ratio.
 
 **It reads what the company said, not only what was written about it.** The company story uses 15 years of revenue and profit from 10-K filings. The news brief lists the 8-K filings from the same weeks next to the headlines, and when a headline and a filing disagree, the filing wins.
@@ -18,7 +22,7 @@ Claude Code skills for stock traders and investors, built on free data. They res
 
 **It runs on free sources only.** yfinance, SEC EDGAR, FRED, BIS, Nasdaq's public calendars, the House Clerk, Wikipedia and Google News. Anthropic's own financial-services plugins connect to paid providers such as FactSet, and most finance MCP servers need an API key.
 
-**It is tested.** 75 offline tests with hand-checked answers, plus a live check that runs every script on companies picked to break naive code: share classes (BRK.B), foreign ADRs that report in another currency (TSM, BABA), banks (JPM), an ETF and an unknown ticker.
+**It is tested.** 83 offline tests with hand-checked answers, plus a live check that runs every script on companies picked to break naive code: share classes (BRK.B), foreign ADRs that report in another currency (TSM, BABA), banks (JPM), an ETF and an unknown ticker.
 
 **It is cheap on tokens.** The scripts do the arithmetic and print one line of JSON. A price check is about 200 tokens, a fundamentals report with three peers under 2,000.
 
@@ -36,9 +40,8 @@ Claude Code skills for stock traders and investors, built on free data. They res
 | `screener` | "Find cheap quality stocks", "Which small caps are breaking out?" Screens the S&P 500, 400, 600 or every US listing on price action and SEC fundamentals, with nine ready presets |
 | `market` | "How is the market?", "What's on the calendar this week?" Trend, distribution days, breadth, VIX, credit spreads and sector leadership counted into risk-on, mixed or risk-off; economic releases, Fed days and earnings dates |
 | `smart-money` | "What did Berkshire buy?", "Are insiders buying NVDA?", "What is Congress trading?" 13F holdings and changes, a consensus of 27 stock-picking funds, Form 4 insider trades, House members' trade reports |
+| `committee` | "Run the committee on Microsoft", "Give me a one-page report on COST." Gathers everything the other skills know about one stock, has a bull, a bear and a risk analyst argue it, and writes an HTML report |
 | `scenarios` | "Bull and bear case for Microsoft", "What growth is priced into Nvidia?", "How did my past calls do?" Cases from ten years of 10-K figures, the growth today's price assumes, and a scorecard for saved views |
-
-Coming next: `committee` (bull and bear analysts argue the case and Claude writes a one-page report).
 
 ## Install
 
@@ -69,7 +72,7 @@ Then ask Claude to "set up the stock trader skills". The SEC asks automated clie
 
 yfinance is not affiliated with Yahoo. Yahoo's terms allow personal use of its data; check them before using these skills for anything else.
 
-Your portfolio and saved scenarios are kept in `~/.stock-trader-skills/` as plain JSON files. They stay on your computer; only ticker symbols go out, to fetch prices. Downloads are cached there too: prices for 15 minutes, news for an hour, statements for a week, Wikipedia articles for a month, and filings that never change (13F, Form 4, House reports) for a year.
+Your portfolio, saved scenarios and committee reports are kept in `~/.stock-trader-skills/` as plain JSON files. They stay on your computer; only ticker symbols go out, to fetch prices. Downloads are cached there too: prices for 15 minutes, news for an hour, statements for a week, Wikipedia articles for a month, and filings that never change (13F, Form 4, House reports) for a year.
 
 ## Running the scripts yourself
 
@@ -88,6 +91,7 @@ python skills/screener/scripts/screener.py run --universe sp600 --preset quality
 python skills/market/scripts/market.py regime
 python skills/smart-money/scripts/smartmoney.py fund berkshire
 python skills/smart-money/scripts/smartmoney.py insiders NVDA
+python skills/committee/scripts/committee.py gather MSFT
 ```
 
 ## Other markets
