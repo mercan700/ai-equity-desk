@@ -7,7 +7,7 @@ import time
 from .config import CACHE_DIR
 
 # Bump when the shape of cached data changes, so old files are ignored.
-VERSION = 4
+VERSION = 5
 
 # Seconds each kind of data stays fresh.
 TTL = {
@@ -19,6 +19,8 @@ TTL = {
     "macro": 12 * 3600,
     "sec_map": 30 * 86400,
     "facts": 7 * 86400,
+    "story": 30 * 86400,
+    "news": 3600,
 }
 
 

@@ -18,6 +18,13 @@ S = ROOT / "skills"
 DESK = S / "desk-data" / "scripts" / "desk.py"
 FUND = S / "fundamentals" / "scripts" / "fundamentals.py"
 TECH = S / "technicals" / "scripts" / "technicals.py"
+STORY = S / "company-story" / "scripts" / "story.py"
+NEWS = S / "news-analyst" / "scripts" / "news.py"
+
+# ticker, market -> the Wikipedia article it must land on
+STORIES = [("AAPL", "US", "Apple Inc."), ("XOM", "US", "ExxonMobil"), ("BRK.B", "US", "Berkshire Hathaway"),
+           ("THYAO", "BIST", "Turkish Airlines"), ("ASELS", "BIST", "Aselsan"), ("EREGL", "BIST", "Erdemir"),
+           ("TUPRS", "BIST", "Tüpraş")]
 
 US = ["AAPL", "MSFT", "BRK.B", "JPM", "V", "TSM", "BABA", "XOM", "KO"]
 BIST = ["THYAO", "PGSUS", "GARAN", "ASELS", "BIMAS", "KCHOL", "TUPRS", "EREGL"]
@@ -122,6 +129,20 @@ def main():
             res, _ = call(DESK, "filings", "BRK.B", "--forms", "10-K", "--limit", "1")
             failures += "error" in res
             print(f"{'ok ' if 'error' not in res else 'BAD'} filings BRK.B: {res.get('filings', res)}"[:200])
+        print("-- company story, news")
+        for t, market, title in STORIES:
+            res, _ = call(STORY, t, "--market", market)
+            w, m = res.get("wikipedia", {}), res.get("market_history", {})
+            good = w.get("title") == title and "error" not in m
+            failures += not good
+            print(f"{'ok ' if good else 'BAD'} story {t}: {w.get('title') or w} ({w.get('matched_by')}), "
+                  f"prices from {m.get('first_price_date')}, deepest {dig(m, ('deepest_falls',))[:1] if m.get('deepest_falls') else m}"[:200])
+        for t, market in (("AAPL", "US"), ("THYAO", "BIST")):
+            res, _ = call(NEWS, t, "--market", market, "--limit", "5")
+            n = res.get("news", {})
+            good = n.get("found", 0) >= 3 and not n.get("source_errors")
+            failures += not good
+            print(f"{'ok ' if good else 'BAD'} news {t}: {n.get('found')} items, {n.get('topic_counts')} {n.get('source_errors', '')}"[:200])
         failures += not expect_error("unknown ticker", DESK, "quote", "ZZZZQQ")
         failures += not expect_error("ETF has no statements", FUND, "SPY")
         failures += not expect_error("unknown market", DESK, "quote", "AAPL", "--market", "LSE")

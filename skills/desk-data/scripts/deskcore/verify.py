@@ -27,11 +27,17 @@ TOLERANCE_PCT = 2.0
 
 
 def _annual(facts, tags, instant):
-    """{period_end: value} from 10-K filings; the latest filing wins (restatements)."""
+    """{period_end: value} from 10-K filings.
+
+    Within a tag the latest filing wins, so restatements replace the original.
+    Across tags the earlier tag in `tags` wins for a given year, and later tags
+    only fill years it lacks: companies switched revenue tags in 2018 (ASC 606),
+    so older years often sit under a different tag.
+    """
     out = {}
     for tag in tags:
-        units = facts.get(tag, {}).get("units", {})
-        for unit, rows in units.items():
+        found = {}
+        for rows in facts.get(tag, {}).get("units", {}).values():
             for r in rows:
                 if r.get("form") not in ("10-K", "10-K/A") or "end" not in r:
                     continue
@@ -41,12 +47,12 @@ def _annual(facts, tags, instant):
                     days = (date.fromisoformat(r["end"]) - date.fromisoformat(r["start"])).days
                     if not 350 <= days <= 380:
                         continue
-                prev = out.get(r["end"])
+                prev = found.get(r["end"])
                 if prev is None or r.get("filed", "") >= prev[1]:
-                    out[r["end"]] = (r["val"], r.get("filed", ""))
-        if out:  # first tag with data wins, so a company's own choice of tag is respected
-            break
-    return {k: v[0] for k, v in out.items()}
+                    found[r["end"]] = (r["val"], r.get("filed", ""))
+        for end, v in found.items():
+            out.setdefault(end, v[0])
+    return out
 
 
 def sec_annuals(ticker):

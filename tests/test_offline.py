@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 os.environ["DESK_HOME"] = tempfile.mkdtemp(prefix="desk-test-")
 sys.path.insert(0, str(ROOT / "skills" / "desk-data" / "scripts"))
 
-from deskcore import DeskError, bis, cache, macro, markets, prices, returns, verify  # noqa: E402
+from deskcore import DeskError, bis, cache, macro, markets, news, prices, returns, verify, wiki  # noqa: E402
 from deskcore.cli import friendly_error  # noqa: E402
 
 
@@ -30,6 +30,7 @@ def load_script(rel):
 
 fundamentals = load_script("skills/fundamentals/scripts/fundamentals.py")
 technicals = load_script("skills/technicals/scripts/technicals.py")
+story = load_script("skills/company-story/scripts/story.py")
 
 
 def frame(closes, start="2024-01-02", volume=1_000_000):
@@ -394,6 +395,94 @@ class Errors(unittest.TestCase):
             pass
         self.assertIn("rate-limiting", friendly_error(YFRateLimitError()))
         self.assertEqual(friendly_error(DeskError("plain")), "plain")
+
+
+class WikiText(unittest.TestCase):
+    def test_clean_name(self):
+        self.assertEqual(wiki.clean_name("Türk Hava Yollari Anonim Ortakligi"), "Türk Hava Yollari")
+        self.assertEqual(wiki.clean_name("Koç Holding A.S."), "Koç Holding")
+        self.assertEqual(wiki.clean_name("Eregli Demir ve Celik Fabrikalari T.A.S."), "Eregli Demir ve Celik Fabrikalari")
+        self.assertEqual(wiki.clean_name("Apple Inc."), "Apple")
+
+    def test_norm_folds_turkish(self):
+        self.assertEqual(wiki.norm("Türk Hava Yolları"), wiki.norm("Turk Hava Yollari"))
+
+    def test_sections_and_history(self):
+        text = ("Lead text.\n\n== History ==\nFounded in 1933.\n\n=== Privatisation ===\nSold in 2006.\n\n"
+                "== Fleet ==\nMany planes.")
+        secs = wiki.split_sections(text)
+        self.assertEqual([h for h, _, _ in secs], ["", "History", "Privatisation", "Fleet"])
+        h = wiki.history_text(secs, 1000)
+        self.assertIn("1933", h)
+        self.assertIn("[Privatisation] Sold in 2006.", h)
+        self.assertNotIn("planes", h)
+        self.assertTrue(wiki.history_text(secs, 12).endswith("..."))
+
+    def test_pick(self):
+        hits = [
+            {"title": "Apple", "snippet": "The apple is a round edible fruit"},
+            {"title": "List of Turkish companies", "snippet": "Türk Hava Yolları company"},
+            {"title": "Türkiye İş Bankası", "snippet": "a bank; Sanayi ve Ticaret holdings"},
+            {"title": "Turkish Airlines", "snippet": "Türk Hava Yolları is the flag carrier airline"},
+        ]
+        self.assertEqual(wiki.pick(hits, "Türk Hava Yollari"), "Turkish Airlines")
+        self.assertIsNone(wiki.pick(hits[:1], "Apple"))  # fruit, not a company
+        # two generic shared words are not enough
+        self.assertIsNone(wiki.pick(hits[2:3], "Aselsan Elektronik Sanayi ve Ticaret"))
+
+
+class Story(unittest.TestCase):
+    def test_drawdowns(self):
+        c = pd.Series([100, 50, 100, 120, 60, 90], index=pd.bdate_range("2024-01-01", periods=6), dtype=float)
+        d = story.drawdowns(c)
+        self.assertEqual(d[0]["fall_pct"], -50.0)
+        self.assertEqual(len(d), 2)
+        self.assertEqual(d[0]["recovered"], "2024-01-03")  # first fall recovers; listed first by date tie
+        self.assertEqual([x["recovered"] for x in d if x["peak"] == "2024-01-04"], ["not yet"])
+
+    def test_bad_jumps_trimmed(self):
+        closes = [5000.0] * 300 + [5.0] * 10 + list(np.linspace(5, 10, 400))
+        with Patch(prices, "load_history", lambda *a, **k: (frame(closes), None)):
+            m = story.market_history("X.IS")
+        self.assertIn("data_warning", m)
+        self.assertTrue(m["deepest_falls"] == [] or m["deepest_falls"][0]["fall_pct"] > -10)
+
+    def test_real_crash_kept(self):
+        closes = [100.0] * 50 + [48.0] * 50  # -52% in a day, like Apple in Sept 2000
+        with Patch(prices, "load_history", lambda *a, **k: (frame(closes), None)):
+            m = story.market_history("X")
+        self.assertNotIn("data_warning", m)
+        self.assertEqual(m["deepest_falls"][0]["fall_pct"], -52.0)
+
+
+class News(unittest.TestCase):
+    def test_topics(self):
+        self.assertIn("earnings", news.topics("THYAO 3. çeyrek bilanço yorumu"))
+        self.assertIn("capital", news.topics("Garanti Bankası pay geri alımı yaptı"))
+        self.assertIn("trading_flow", news.topics("hisselerinde yüklü alım"))
+        self.assertIn("rating", news.topics("Morgan Stanley upgrades Apple, raises price target"))
+        self.assertEqual(news.topics("I lived with it for a week"), [])
+
+    def test_relevance(self):
+        words = news.name_words("Türk Hava Yollari Anonim Ortakligi")
+        self.assertTrue(news.relevant("THYAO hissesi yükseldi", "THYAO", words))
+        self.assertTrue(news.relevant("Türk Hava Yolları yolcu sayısı", "THYAO", words))
+        self.assertFalse(news.relevant("Türk Telekom yeni tarife", "THYAO", words))  # 'Türk' alone is generic
+        self.assertTrue(news.about_another("Energizer (NYSE:ENR) Gets Price Target from JPMorgan", "JPM"))
+        self.assertFalse(news.about_another("JPMorgan (NYSE:JPM) raises dividend", "JPM"))
+
+    def test_collect_dedupes_and_filters(self):
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        g = [{"title": "Apple beats earnings estimates", "source": "A", "published": now, "url": "u1", "feed": "google"},
+             {"title": "Apple beats earnings estimates", "source": "B", "published": now, "url": "u2", "feed": "google"},
+             {"title": "Old Apple story", "source": "C", "published": now - timedelta(days=90), "url": "u3", "feed": "google"},
+             {"title": "Nvidia rallies", "source": "D", "published": now, "url": "u4", "feed": "google"}]
+        with Patch(news, "google", lambda q, lang: list(g)), Patch(news, "yahoo", lambda sym: []):
+            out = news.collect("AAPL", "AAPL", "Apple Inc.", "US", days=30, limit=10)
+        self.assertEqual(out["found"], 1)
+        self.assertEqual(out["dropped_off_topic"], 1)
+        self.assertEqual(out["items"][0]["topics"], ["earnings"])
 
 
 if __name__ == "__main__":

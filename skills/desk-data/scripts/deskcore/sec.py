@@ -37,29 +37,67 @@ def cik_for(ticker):
     return m[t]
 
 
-def filings(ticker, forms=("10-K", "10-Q", "8-K"), limit=10):
+# 8-K item numbers and what they mean (SEC Form 8-K general instructions).
+EIGHT_K_ITEMS = {
+    "1.01": "material agreement signed", "1.02": "material agreement ended",
+    "1.03": "bankruptcy or receivership", "1.05": "cybersecurity incident",
+    "2.01": "acquisition or disposal completed", "2.02": "results of operations",
+    "2.03": "new debt or obligation", "2.05": "exit or restructuring costs",
+    "2.06": "material impairment", "3.01": "delisting notice",
+    "3.02": "unregistered share sale", "3.03": "change to shareholder rights",
+    "4.01": "auditor changed", "4.02": "past financials no longer reliable",
+    "5.01": "change in control", "5.02": "director or officer change",
+    "5.03": "bylaws or fiscal year changed", "5.07": "shareholder vote results",
+    "7.01": "Regulation FD disclosure", "8.01": "other events",
+}
+
+
+def submissions(ticker):
+    """Company metadata and recent filings from SEC's submissions API, cached for a day."""
     cik, name = cik_for(ticker)
     data = cache.get_json("filings", cik)
     if data is None:
-        data = _get(f"https://data.sec.gov/submissions/CIK{cik}.json").json()
-        data = {"recent": data.get("filings", {}).get("recent", {}),
-                "sic": data.get("sicDescription"), "fiscal_year_end": data.get("fiscalYearEnd")}
+        raw = _get(f"https://data.sec.gov/submissions/CIK{cik}.json").json()
+        older = raw.get("filings", {}).get("files", [])
+        data = {
+            "recent": raw.get("filings", {}).get("recent", {}),
+            "sic": raw.get("sicDescription"),
+            "fiscal_year_end": raw.get("fiscalYearEnd"),
+            "state_of_incorporation": raw.get("stateOfIncorporation"),
+            "former_names": [{"name": f["name"], "from": f["from"][:10], "to": f["to"][:10]}
+                             for f in raw.get("formerNames", [])],
+        }
+        dates = [f["filingFrom"] for f in older if f.get("filingFrom")] + data["recent"].get("filingDate", [])
+        data["first_filing"] = min(dates) if dates else None
         cache.put_json("filings", cik, data)
-    rec = data["recent"]
+    data["cik"], data["company"] = cik, name
+    return data
+
+
+def filings(ticker, forms=("10-K", "10-Q", "8-K"), limit=10, since=None):
+    data = submissions(ticker)
+    cik, rec = data["cik"], data["recent"]
     want = {f.upper() for f in forms} if forms else None
     out = []
     for i, form in enumerate(rec.get("form", [])):
         if want and form.upper() not in want:
             continue
+        if since and rec["filingDate"][i] < since:
+            break  # newest first
         acc = rec["accessionNumber"][i]
         doc = rec["primaryDocument"][i]
-        out.append({
+        row = {
             "form": form,
             "filed": rec["filingDate"][i],
             "period": rec.get("reportDate", [""] * (i + 1))[i],
             "url": f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{acc.replace('-', '')}/{doc}",
-        })
+        }
+        items = (rec.get("items") or [""] * (i + 1))[i]
+        if form.startswith("8-K") and items:
+            row["items"] = [EIGHT_K_ITEMS.get(x.strip(), x.strip()) for x in items.split(",")
+                            if x.strip() != "9.01"]  # 9.01 is just "exhibits attached"
+        out.append(row)
         if len(out) >= limit:
             break
-    return {"company": name, "cik": cik, "industry": data.get("sic"),
+    return {"company": data["company"], "cik": cik, "industry": data.get("sic"),
             "fiscal_year_end": data.get("fiscal_year_end"), "filings": out}
