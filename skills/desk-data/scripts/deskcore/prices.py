@@ -1,4 +1,5 @@
 """Prices, company profile and financial statements from yfinance (free, unofficial)."""
+import logging
 import math
 
 import pandas as pd
@@ -9,6 +10,9 @@ try:
     import yfinance as yf
 except ImportError:  # setup skill explains how to install
     yf = None
+
+# yfinance prints HTTP errors for unknown tickers; we report our own message instead.
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 
 def _yf():
@@ -58,7 +62,8 @@ def quote(ticker, market="US"):
     def back(n):
         return float(c.iloc[-1 - n]) if len(c) > n else None
 
-    year_start = c[c.index.year == c.index[-1].year]
+    # YTD is measured from the last close of the previous year.
+    prev_year = c[c.index.year < c.index[-1].year]
     rets = c.pct_change().dropna()
     hi, lo = float(c.max()), float(c.min())
     return {
@@ -70,7 +75,7 @@ def quote(ticker, market="US"):
             "1w": _pct(last, back(5)),
             "1m": _pct(last, back(21)),
             "3m": _pct(last, back(63)),
-            "ytd": _pct(last, float(year_start.iloc[0])) if len(year_start) else None,
+            "ytd": _pct(last, float(prev_year.iloc[-1])) if len(prev_year) else None,
             "1y": _pct(last, float(c.iloc[0])),
         },
         "high_52w": _num(hi),
@@ -137,9 +142,10 @@ def profile(ticker, market="US", summary_chars=600):
 # Statement rows we keep, in the order an analyst reads them. Values in millions.
 ROWS = {
     "income": ["Total Revenue", "Gross Profit", "Operating Income", "EBITDA",
+               "Normalized EBITDA", "Reconciled Depreciation",
                "Net Income", "Diluted EPS", "Diluted Average Shares"],
     "balance": ["Total Assets", "Cash And Cash Equivalents", "Total Debt",
-                "Stockholders Equity"],
+                "Long Term Debt", "Current Debt", "Stockholders Equity"],
     "cashflow": ["Operating Cash Flow", "Capital Expenditure", "Free Cash Flow"],
 }
 
@@ -160,6 +166,15 @@ def _rows(df, names):
                     raw = _num(v, 0)
                     rec[n] = None if raw is None else round(raw / 1e6, 1)
     return out
+
+
+def debt_of(r):
+    """Total debt, else long-term plus current debt (Yahoo sometimes leaves the total blank)."""
+    if r.get("Total Debt") is not None:
+        return r["Total Debt"]
+    if r.get("Long Term Debt") is not None:
+        return r["Long Term Debt"] + (r.get("Current Debt") or 0)
+    return None
 
 
 def financials(ticker, market="US", quarterly=False, periods=4):
@@ -188,6 +203,7 @@ def financials(ticker, market="US", quarterly=False, periods=4):
         rev = r.get("Total Revenue")
         prev = table[periods_sorted[i + 1]].get("Total Revenue") if i + 1 < len(periods_sorted) else None
         eq = r.get("Stockholders Equity")
+        debt = debt_of(r)
         ratios[p] = {
             "gross_margin_pct": _num(r["Gross Profit"] / rev * 100) if rev and r.get("Gross Profit") is not None else None,
             "operating_margin_pct": _num(r["Operating Income"] / rev * 100) if rev and r.get("Operating Income") is not None else None,
@@ -195,7 +211,7 @@ def financials(ticker, market="US", quarterly=False, periods=4):
             "fcf_margin_pct": _num(r["Free Cash Flow"] / rev * 100) if rev and r.get("Free Cash Flow") is not None else None,
             "revenue_growth_pct": _pct(rev, prev),
             "roe_pct": _num(r["Net Income"] / eq * 100) if eq and r.get("Net Income") is not None else None,
-            "debt_to_equity": _num(r["Total Debt"] / eq) if eq and r.get("Total Debt") is not None else None,
+            "debt_to_equity": _num(debt / eq) if eq and debt is not None else None,
         }
     return {"symbol": sym, "units": "millions (EPS per share)",
             "basis": "quarterly" if quarterly else "annual",

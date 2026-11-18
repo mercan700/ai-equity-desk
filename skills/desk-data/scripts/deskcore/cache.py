@@ -6,6 +6,9 @@ import time
 
 from .config import CACHE_DIR
 
+# Bump when the shape of cached data changes, so old files are ignored.
+VERSION = 4
+
 # Seconds each kind of data stays fresh.
 TTL = {
     "quote": 15 * 60,
@@ -21,7 +24,7 @@ TTL = {
 def path_for(kind, key, ext="json"):
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", key)[:60]
     digest = hashlib.sha1(key.encode()).hexdigest()[:8]
-    folder = CACHE_DIR / kind
+    folder = CACHE_DIR / f"v{VERSION}" / kind
     folder.mkdir(parents=True, exist_ok=True)
     return folder / f"{safe}-{digest}.{ext}"
 

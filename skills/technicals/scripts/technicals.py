@@ -9,7 +9,6 @@ volatility (ATR, Bollinger), support/resistance from swing points,
 volume trend, and relative strength against the market benchmark.
 """
 import argparse
-import json
 import math
 import os
 import sys
@@ -18,7 +17,8 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "desk-data", "scripts"))
 
-from deskcore import DeskError, markets, prices  # noqa: E402
+from deskcore.cli import run  # noqa: E402
+from deskcore import DeskError, config, markets, prices  # noqa: E402
 from deskcore.prices import _num, _pct  # noqa: E402
 
 
@@ -97,15 +97,22 @@ def analyze(ticker, market="US"):
 
     sup, res = swing_levels(df, last)
 
-    rel = {}
+    # Stock return minus benchmark return over the same calendar dates.
+    rel = {"benchmark": minfo["benchmark"]}
     try:
         bdf, _ = prices.load_history(minfo["benchmark"], "2y", "1d")
         b = bdf["Close"].dropna()
+        end_b = b.asof(c.index[-1])
         for label, n in (("3m", 63), ("6m", 126), ("1y", 252)):
-            if len(c) > n and len(b) > n:
-                rel[label] = _num(_pct(last, float(c.iloc[-1 - n])) - _pct(float(b.iloc[-1]), float(b.iloc[-1 - n])))
-    except DeskError:
-        rel = None
+            if len(c) <= n:
+                continue
+            start = c.index[-1 - n]
+            stock_ret = _pct(last, float(c.iloc[-1 - n]))
+            bench_ret = _pct(float(end_b), float(b.asof(start)))
+            if stock_ret is not None and bench_ret is not None:
+                rel[label] = _num(stock_ret - bench_ret)
+    except Exception as e:  # noqa: BLE001 - the rest of the analysis is still useful
+        rel["error"] = f"benchmark unavailable: {e}"
 
     vol20, vol60 = float(df["Volume"].tail(20).mean()), float(df["Volume"].tail(60).mean())
     return {
@@ -134,24 +141,16 @@ def analyze(ticker, market="US"):
             "from_52w_high_pct": _pct(last, float(yr.max())),
         },
         "volume": {"avg20_vs_avg60_pct": _pct(vol20, vol60)},
-        "relative_strength_vs_benchmark_pp": {"benchmark": minfo["benchmark"], **(rel or {})},
+        "relative_strength_vs_benchmark_pp": rel,
     }
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description="Technical picture of one stock.")
     ap.add_argument("ticker")
-    ap.add_argument("--market", default="US")
+    ap.add_argument("--market", default=config.load().get("default_market", "US"), help="US or BIST")
     a = ap.parse_args()
-    try:
-        out = analyze(a.ticker, a.market)
-    except DeskError as e:
-        out = {"error": str(e)}
-    except Exception as e:  # noqa: BLE001
-        out = {"error": f"{type(e).__name__}: {e}"}
-    sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False, separators=(",", ":"), default=str) + "\n").encode("utf-8"))
-    return 1 if "error" in out else 0
-
+    return run(lambda: analyze(a.ticker, a.market))
 
 if __name__ == "__main__":
     sys.exit(main())

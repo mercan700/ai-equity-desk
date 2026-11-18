@@ -11,20 +11,13 @@
   desk.py global
 """
 import argparse
-import json
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from deskcore import DeskError, config, macro, prices, sec  # noqa: E402
-
-
-def emit(obj, pretty=False):
-    text = json.dumps(obj, ensure_ascii=False, default=str,
-                      indent=2 if pretty else None,
-                      separators=None if pretty else (",", ":"))
-    sys.stdout.buffer.write((text + "\n").encode("utf-8"))
+from deskcore import config, macro, prices, sec  # noqa: E402
+from deskcore.cli import run  # noqa: E402
 
 
 def main(argv=None):
@@ -57,29 +50,16 @@ def main(argv=None):
     sub.add_parser("global", help="world markets snapshot")
 
     a = p.parse_args(argv)
-    try:
-        if a.cmd == "quote":
-            out = prices.quote(a.ticker, a.market)
-        elif a.cmd == "history":
-            out = prices.history_summary(a.ticker, a.market, a.period, a.interval)
-        elif a.cmd == "profile":
-            out = prices.profile(a.ticker, a.market, a.summary_chars)
-        elif a.cmd == "financials":
-            out = prices.financials(a.ticker, a.market, a.quarterly, a.periods)
-        elif a.cmd == "filings":
-            out = sec.filings(a.ticker, a.forms, a.limit)
-        elif a.cmd == "macro":
-            out = macro.snapshot(a.codes)
-        else:
-            out = prices.global_snapshot()
-    except DeskError as e:
-        emit({"error": str(e)})
-        return 1
-    except Exception as e:  # network hiccups, upstream format changes
-        emit({"error": f"{type(e).__name__}: {e}", "hint": "Retry later or run desk-setup to diagnose."})
-        return 1
-    emit(out, a.pretty)
-    return 0
+    commands = {
+        "quote": lambda: prices.quote(a.ticker, a.market),
+        "history": lambda: prices.history_summary(a.ticker, a.market, a.period, a.interval),
+        "profile": lambda: prices.profile(a.ticker, a.market, a.summary_chars),
+        "financials": lambda: prices.financials(a.ticker, a.market, a.quarterly, a.periods),
+        "filings": lambda: sec.filings(a.ticker, a.forms, a.limit),
+        "macro": lambda: macro.snapshot(a.codes),
+        "global": prices.global_snapshot,
+    }
+    return run(commands[a.cmd], a.pretty)
 
 
 if __name__ == "__main__":

@@ -9,17 +9,24 @@ Prints compact JSON: growth, profitability, cash quality, balance sheet,
 valuation, each pillar with a rule-based signal (see references/scoring.md).
 """
 import argparse
-import json
 import os
 import statistics
 import sys
+from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "desk-data", "scripts"))
 
-from deskcore import DeskError, prices  # noqa: E402
+from deskcore.cli import friendly_error, run  # noqa: E402
+from deskcore import DeskError, config, prices  # noqa: E402
 from deskcore.prices import _num, _pct  # noqa: E402
 
-FINANCIAL_SECTORS = {"Financial Services", "Financial"}
+# Lenders and insurers, where margins, free cash flow and net debt do not mean what they
+# mean elsewhere. Payment networks and asset managers (also "Financial Services" in
+# Yahoo's sector list) report normal margins, so they are not included.
+def is_financial(industry):
+    ind = (industry or "").lower()
+    return ind.startswith(("banks", "insurance")) or ind in {
+        "capital markets", "mortgage finance", "financial conglomerates"}
 
 
 def grade(value, strong, ok, higher_is_better=True):
@@ -34,27 +41,36 @@ def series(st, periods, key):
     return [st[p].get(key) for p in periods]
 
 
-def cagr(values, years):
-    vals = [v for v in values if v is not None]
-    if len(vals) < 2 or vals[0] <= 0 or vals[-1] <= 0 or years <= 0:
-        return None
-    return _num(((vals[-1] / vals[0]) ** (1 / years) - 1) * 100)
+def cagr(st, periods, key):
+    """Compound annual growth between the oldest and newest period that have the value.
+    Returns (pct, years). Years come from the period dates, not the number of columns."""
+    pts = [(p, st[p].get(key)) for p in periods if st[p].get(key) is not None]
+    if len(pts) < 2:
+        return None, None
+    (p0, v0), (p1, v1) = pts[0], pts[-1]
+    years = round((date.fromisoformat(p1) - date.fromisoformat(p0)).days / 365.25, 1)
+    if v0 <= 0 or v1 <= 0 or years < 0.9:
+        return None, years
+    return _num(((v1 / v0) ** (1 / years) - 1) * 100), years
 
 
 def analyze(ticker, market):
     prof = prices.profile(ticker, market, summary_chars=0)
     fin = prices.financials(ticker, market, periods=5)
     st, ratios = fin["statements"], fin["ratios"]
-    periods = sorted(st)  # oldest -> newest
+    # Yahoo sometimes returns one more balance-sheet year than income-statement
+    # years; keep only periods that have revenue.
+    periods = sorted(p for p in st if st[p].get("Total Revenue") is not None)
+    if not periods:
+        raise DeskError(f"No revenue figures for '{prof['symbol']}'.")
     latest_p = periods[-1]
     L, R = st[latest_p], ratios[latest_p]
-    years = len(periods) - 1
-    is_fin = prof.get("sector") in FINANCIAL_SECTORS
+    is_fin = is_financial(prof.get("industry"))
 
-    rev = series(st, periods, "Total Revenue")
     op_margins = [ratios[p]["operating_margin_pct"] for p in periods]
     ni, fcf = L.get("Net Income"), L.get("Free Cash Flow")
-    debt, cash, ebitda = L.get("Total Debt"), L.get("Cash And Cash Equivalents"), L.get("EBITDA")
+    debt, cash = prices.debt_of(L), L.get("Cash And Cash Equivalents")
+    ebitda = ebitda_of(L)
     net_debt = None if debt is None or cash is None else round(debt - cash, 1)
     shares = [s for s in series(st, periods, "Diluted Average Shares") if s]
     # Some companies report in a different currency than they trade in
@@ -68,10 +84,11 @@ def analyze(ticker, market):
     mcap_m = prof["market_cap"] / 1e6 / fx if prof.get("market_cap") and fx else None
     equity = L.get("Stockholders Equity")
 
+    rev_cagr, years = cagr(st, periods, "Total Revenue")
     growth = {
-        "revenue_cagr_pct": cagr(rev, years),
+        "revenue_cagr_pct": rev_cagr,
         "revenue_growth_latest_pct": R["revenue_growth_pct"],
-        "eps_cagr_pct": cagr(series(st, periods, "Diluted EPS"), years),
+        "eps_cagr_pct": cagr(st, periods, "Diluted EPS")[0],
         "years": years,
     }
     growth["signal"] = grade(growth["revenue_cagr_pct"], 10, 3)
@@ -128,7 +145,43 @@ def analyze(ticker, market):
         "latest_fiscal_year": latest_p, "financial_company": is_fin,
         "growth": growth, "profitability": profitability, "cash_quality": cash_q,
         "balance_sheet": balance, "valuation": valuation,
+        "caveats": caveats(prof.get("industry"), fin_cur, valuation),
     }
+
+
+def ebitda_of(r):
+    """Reported EBITDA, else Yahoo's normalized EBITDA, else operating income + depreciation."""
+    for key in ("EBITDA", "Normalized EBITDA"):
+        if r.get(key) is not None:
+            return r[key]
+    if r.get("Operating Income") is not None and r.get("Reconciled Depreciation") is not None:
+        return r["Operating Income"] + r["Reconciled Depreciation"]
+    return None
+
+
+LEASE_HEAVY = {"airlines", "restaurants", "department stores", "grocery stores", "discount stores",
+               "apparel retail", "specialty retail", "lodging", "rental & leasing services"}
+HIGH_INFLATION_CURRENCIES = {"TRY", "ARS", "EGP", "NGN"}
+
+
+def caveats(industry, currency, valuation):
+    """Known reasons the numbers above can mislead for this kind of company."""
+    ind = (industry or "").lower()
+    out = []
+    if ind in LEASE_HEAVY:
+        out.append("Lease-heavy industry: under IFRS 16 lease payments sit in financing cash flow, "
+                   "so free cash flow and FCF yield are overstated and EBITDA is flattered.")
+    if ind == "conglomerates":
+        out.append("Conglomerate: consolidated figures may include a bank or insurer, which distorts "
+                   "cash flow, debt and margins. Read the segments or a NAV view instead.")
+    if currency in HIGH_INFLATION_CURRENCIES:
+        out.append(f"Statements in {currency}, a high-inflation currency: nominal growth overstates real "
+                   "growth. Compare growth with inflation or look at USD figures.")
+    fy = valuation.get("fcf_yield_pct")
+    if fy is not None and abs(fy) > 20:
+        out.append(f"FCF yield of {fy}% is extreme; check for one-off working-capital swings "
+                   "before reading anything into it.")
+    return out
 
 
 PEER_FIELDS = {
@@ -157,31 +210,29 @@ def compare(target, peers):
     return {"peers": table, "median_and_gap": medians}
 
 
+def with_peers(ticker, market, peers):
+    out = analyze(ticker, market)
+    if not peers:
+        return out
+    peer_data, failed = [], {}
+    for p in peers:
+        try:
+            peer_data.append(analyze(p, market))
+        except Exception as e:  # noqa: BLE001 - one bad peer should not sink the report
+            failed[p] = friendly_error(e)
+    out["peer_comparison"] = compare(out, peer_data)
+    if failed:
+        out["peer_comparison"]["failed"] = failed
+    return out
+
+
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description="Fundamental scorecard for one company.")
     ap.add_argument("ticker")
-    ap.add_argument("--market", default="US")
+    ap.add_argument("--market", default=config.load().get("default_market", "US"), help="US or BIST")
     ap.add_argument("--peers", nargs="*", default=[])
     a = ap.parse_args()
-    try:
-        out = analyze(a.ticker, a.market)
-        if a.peers:
-            peer_data, failed = [], {}
-            for p in a.peers:
-                try:
-                    peer_data.append(analyze(p, a.market))
-                except Exception as e:  # noqa: BLE001
-                    failed[p] = str(e)
-            out["peer_comparison"] = compare(out, peer_data)
-            if failed:
-                out["peer_comparison"]["failed"] = failed
-    except DeskError as e:
-        out = {"error": str(e)}
-    except Exception as e:  # noqa: BLE001
-        out = {"error": f"{type(e).__name__}: {e}"}
-    sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False, separators=(",", ":"), default=str) + "\n").encode("utf-8"))
-    return 1 if "error" in out else 0
-
+    return run(lambda: with_peers(a.ticker, a.market, a.peers))
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -1,43 +1,42 @@
 ---
 name: desk-data
-description: The data layer of the AI equity research desk. Fetches free market data on demand and returns compact summaries - price snapshots and returns, long-run history stats, company profile and valuation multiples, financial statements with margins and growth, SEC filings lists, US macro from FRED, and a world-markets snapshot. Use whenever a stock question needs real numbers ("how is AAPL doing", "NVDA margins", "latest 10-K", "where are rates"), and as the shared data source for every other desk skill. Supports US stocks fully and BIST (Borsa Istanbul) prices with --market BIST.
+description: Fetches free market data and returns short JSON summaries. Covers price and returns, long-run history, company profile and multiples, financial statements with margins and growth, SEC filing lists, US macro series from FRED, and a snapshot of world markets. Use whenever a question about a stock or the economy needs real numbers ("how is AAPL doing", "NVDA margins", "latest 10-K", "where are rates"). The other desk skills use it as their data source. Covers US stocks and Borsa Istanbul (--market BIST).
 ---
 
 # Desk data
 
-One command-line tool, `scripts/desk.py`, wraps every free source. It prints one line of compact JSON. Read the JSON, then answer in plain language.
+`scripts/desk.py` wraps every data source behind one command line and prints a single line of JSON. Read the JSON and answer in plain language.
 
 ## Commands
 
-| Need | Command |
+| Question | Command |
 |---|---|
-| Price now, returns 1d-1y, 52-week range, volatility | `python scripts/desk.py quote AAPL` |
-| Long-run CAGR, volatility, max drawdown (saves a CSV for other scripts) | `python scripts/desk.py history AAPL --period 10y` |
-| What the company does, sector, size, P/E, P/B, EV/EBITDA, yield | `python scripts/desk.py profile AAPL` |
-| Revenue, profit, cash flow, debt + margins, growth, ROE | `python scripts/desk.py financials AAPL` (add `--quarterly`) |
-| Latest SEC filings with links (US only) | `python scripts/desk.py filings AAPL --forms 10-K 8-K --limit 5` |
-| US macro: Fed rate, 10Y yield, curve, CPI, jobs, credit spreads | `python scripts/desk.py macro` or `macro DGS10 CPIAUCSL` |
-| World markets: S&P, Nasdaq, VIX, dollar, oil, gold, EUR/USD, BTC | `python scripts/desk.py global` |
+| Last price, returns from 1 day to 1 year, 52-week range, recent volatility | `python scripts/desk.py quote AAPL` |
+| Long-run CAGR, volatility and largest drawdown; also saves the prices as CSV | `python scripts/desk.py history AAPL --period 10y` |
+| Business description, sector, size, P/E, P/B, EV/EBITDA, dividend yield | `python scripts/desk.py profile AAPL` |
+| Revenue, profit, cash flow and debt, with margins, growth and ROE | `python scripts/desk.py financials AAPL` (add `--quarterly` for quarters) |
+| Recent SEC filings with links, US companies only | `python scripts/desk.py filings AAPL --forms 10-K 8-K --limit 5` |
+| Fed funds rate, 10-year yield, yield curve, CPI, unemployment, credit spreads | `python scripts/desk.py macro` |
+| Any other FRED series by its code | `python scripts/desk.py macro DGS10 CPIAUCSL` |
+| S&P 500, Nasdaq, VIX, dollar index, Brent, gold, EUR/USD, Bitcoin | `python scripts/desk.py global` |
 
-Borsa Istanbul: add `--market BIST` (`quote THYAO --market BIST`). Only prices, history, profile and financials work for BIST so far.
-
-Any FRED series code works with `macro` (find codes at fred.stlouisfed.org).
+For Borsa Istanbul add `--market BIST`, for example `quote THYAO --market BIST`. BIST supports quote, history, profile and financials; filings and macro are US only for now.
 
 ## Rules
 
-- **Run only what the question needs.** One `quote` answers "how is X doing". Do not run every command by default.
-- **Never print or read the cached CSV files.** They exist for other scripts. Use the summary JSON.
-- **Cite the source and date** of every number you report (e.g. "yfinance, close 2026-11-17"; "FRED DGS10, 2026-11-14"). Free data can lag or be wrong; say so when a number looks odd.
-- **Units:** financials are in millions of the reporting currency, EPS per share, percentages already multiplied by 100.
-- **Errors** come back as `{"error": ...}`. A setup-type error (missing package, missing SEC user-agent) means: use the desk-setup skill. A ticker error means: ask the user to confirm the ticker and market.
-- **Not advice.** Report and explain data. Never tell the user to buy, sell or hold, and never give a single price target.
+- Run the commands the question needs and no more. "How is X doing" needs one `quote`.
+- Do not open the cached CSV files. They are there for other scripts; the JSON already holds the summary.
+- Give the source and date with every number, for example "yfinance close, 2026-11-17" or "FRED DGS10, 2026-11-14". Free data can lag or contain errors, so point out a number that looks wrong.
+- Statement amounts are in millions of the currency the company reports in. EPS is per share. Percentages are already multiplied by 100.
+- Errors come back as `{"error": "..."}`. A missing package or SEC user-agent means the desk-setup skill should run. An unknown ticker means the user should confirm the symbol and market.
+- Report and explain the data. Do not tell the user to buy, sell or hold, and do not give a price target.
 
-## Data sources
+## Sources
 
-| Source | What | Cost | Notes |
-|---|---|---|---|
-| yfinance (Yahoo) | prices, profile, statements | free | unofficial; can rate-limit |
-| SEC EDGAR | filings list | free | needs contact User-Agent, max 10 req/s (enforced) |
-| FRED | US macro | free | public CSV, no key |
+| Source | Data | Notes |
+|---|---|---|
+| yfinance (Yahoo Finance) | prices, profiles, statements | free and unofficial; Yahoo may rate-limit heavy use |
+| SEC EDGAR | filing lists | free; SEC requires a contact User-Agent and allows 10 requests a second, which the script respects |
+| FRED | US macro series | free public CSV, no key |
 
-Cache lives in `~/.ai-equity-desk/cache` with sensible lifetimes (prices 15 min, statements 7 days), so repeat questions are fast and do not hit the sources again.
+Results are cached in `~/.ai-equity-desk/cache`: prices for 15 minutes, statements and profiles for 7 days. A repeated question reads the cache and makes no network call.

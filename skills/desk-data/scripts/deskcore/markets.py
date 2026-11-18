@@ -1,8 +1,10 @@
-"""Market adapters. Add a market here and every skill can use it.
+"""Market adapters. A market added here is available to every skill.
 
-Only US has full coverage (prices + SEC filings + FRED macro).
-BIST is prices-only for now; its own filings and macro come in a later version.
+US: prices, statements, SEC filings and FRED macro.
+BIST: prices and statements. KAP filings and Turkish macro are not wired up yet.
 """
+import re
+
 from . import DeskError
 
 MARKETS = {
@@ -25,6 +27,10 @@ def symbol(ticker, market="US"):
         raise DeskError("Empty ticker.")
     _, m = get(market)
     sfx = m["suffix"]
-    if t.startswith("^") or "=" in t or not sfx or t.endswith(sfx):
+    if t.startswith("^") or "=" in t:
         return t
-    return t + sfx
+    if not sfx:
+        # Yahoo writes share classes with a dash (BRK.B -> BRK-B), but other
+        # symbols such as DX-Y.NYB keep their dot.
+        return re.sub(r"^([A-Z]+)\.([A-Z])$", r"\1-\2", t)
+    return t if t.endswith(sfx) else t + sfx
