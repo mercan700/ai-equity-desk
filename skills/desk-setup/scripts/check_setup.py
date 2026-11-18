@@ -55,7 +55,7 @@ def main():
                           "fix": f"{sys.executable} -m pip install {' '.join(missing)}"}))
         return 1
 
-    from deskcore import config, macro, prices, sec  # noqa: E402
+    from deskcore import bis, config, macro, prices, sec  # noqa: E402
 
     updates = {}
     if a.sec_user_agent:
@@ -80,6 +80,7 @@ def main():
     if not a.offline:
         results.append(check("yfinance prices", lambda: f"AAPL close {prices.quote('AAPL')['close']}"))
         results.append(check("FRED macro", lambda: f"DGS10 {macro.snapshot(['DGS10'])['DGS10'].get('value')}"))
+        results.append(check("BIS inflation", lambda: f"TR CPI to {bis.cpi_index('TR').index[-1]}"))
         if ua_ok:
             results.append(check("SEC EDGAR", lambda: sec.cik_for("AAPL")[1]))
 

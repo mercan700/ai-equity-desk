@@ -31,6 +31,7 @@ Volatility: average daily range (ATR) <x>% of price; largest fall in the past ye
 |---|---|---|---|
 
 Against the market: <+/- x> percentage points versus <benchmark> over 3 months, 6 months and 1 year.
+Returns: 1-year and annualized 3- and 5-year returns from `returns`. For BIST show lira, dollar and after-inflation returns side by side.
 What would change the picture: 2 or 3 concrete conditions, for example
 "a close below the 200-day average at 212 would end the uptrend".
 

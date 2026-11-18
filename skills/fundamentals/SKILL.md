@@ -36,6 +36,7 @@ Source: yfinance, fiscal year ending <latest_fiscal_year>, <currency> millions
 
 What stands out: 2 to 4 points, each tied to a number in the table.
 What would change the picture: 2 or 3 numbers to watch in the next reports.
+Data check: for US companies, the `verification` result in one line, e.g. "16 of 16 figures match the 10-K filed with the SEC". Name every item listed under `differences`.
 Caveats: every item from the `caveats` list, in plain words, plus anything else that looks off.
 
 This is a summary of public data, not investment advice.
@@ -48,5 +49,7 @@ This is a summary of public data, not investment advice.
 - Banks and insurers (`financial_company: true`) have no meaningful gross margin, free cash flow or net debt, so the script leaves those out. Discuss ROE, P/B and growth, and say that a full bank analysis needs loan, deposit and capital ratios that this skill does not fetch.
 - `currency` is the currency of the financial statements. When `valuation.currency_note` is present, the shares trade in another currency and the script converted the market cap; mention the conversion once.
 - `pe_ttm` is taken from yfinance unchanged and is sometimes wrong for non-US stocks (a P/E in the hundreds next to a double-digit FCF yield is a sign). EV/EBITDA, P/B and FCF yield are computed from the statements and are more reliable. When they disagree with the P/E, say the P/E looks unreliable.
+- When `verification.confidence` is low, say that the statement figures could not be confirmed and treat the grades as provisional.
+- For BIST companies, `verification` is "not checked": say once that the figures come from Yahoo only.
 - If the net margin moves far from the operating margin in one year, look for a one-off gain or write-down before drawing conclusions.
 - Target length: the table plus 6 to 8 short points.

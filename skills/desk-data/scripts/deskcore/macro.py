@@ -60,3 +60,31 @@ def snapshot(codes=None):
                 rec["change_1y_pp"] = _num(last - prev)
         out[code] = rec
     return out
+
+
+def turkey():
+    """Turkish policy rate, inflation and the lira, from BIS and Yahoo."""
+    from . import bis, prices  # local import keeps FRED-only use free of these sources
+
+    out = {}
+    try:
+        rate, cpi = bis.policy_rate("TR"), bis.cpi_yoy("TR")
+        r_last, c_last = float(rate.iloc[-1]), float(cpi.iloc[-1])
+        year_ago = rate[rate.index <= rate.index[-1] - 12]
+        out["policy_rate"] = {"value": _num(r_last), "month": str(rate.index[-1]),
+                              "change_1y_pp": _num(r_last - float(year_ago.iloc[-1])) if len(year_ago) else None,
+                              "source": "BIS central bank policy rates"}
+        out["cpi_inflation_yoy"] = {"value": _num(c_last), "month": str(cpi.index[-1]),
+                                    "source": "BIS consumer prices"}
+        out["real_policy_rate_pp"] = {"value": _num(r_last - c_last),
+                                      "note": "policy rate minus latest annual inflation"}
+    except (DeskError, requests.RequestException) as e:
+        out["bis_error"] = str(e)
+    for name, sym in (("USD/TRY", "USDTRY=X"), ("EUR/TRY", "EURTRY=X"), ("BIST 100", "XU100.IS")):
+        try:
+            q = prices.quote(sym)
+            out[name] = {"close": q["close"], "date": q["date"],
+                         **{k: q["change_pct"][k] for k in ("1m", "ytd", "1y")}}
+        except DeskError as e:
+            out[name] = {"error": str(e)}
+    return out

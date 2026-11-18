@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 os.environ["DESK_HOME"] = tempfile.mkdtemp(prefix="desk-test-")
 sys.path.insert(0, str(ROOT / "skills" / "desk-data" / "scripts"))
 
-from deskcore import DeskError, cache, macro, markets, prices  # noqa: E402
+from deskcore import DeskError, bis, cache, macro, markets, prices, returns, verify  # noqa: E402
 from deskcore.cli import friendly_error  # noqa: E402
 
 
@@ -226,6 +226,13 @@ class Fundamentals(unittest.TestCase):
 
 
 class Technicals(unittest.TestCase):
+    def setUp(self):
+        self.patch = Patch(returns, "real_returns", lambda *a, **k: {"1y": {}})
+        self.patch.__enter__()
+
+    def tearDown(self):
+        self.patch.__exit__()
+
     def test_rsi_extremes(self):
         up = pd.Series(np.arange(1, 60, dtype=float))
         self.assertAlmostEqual(technicals.rsi(up).iloc[-1], 100.0)
@@ -308,6 +315,77 @@ class Fallbacks(unittest.TestCase):
         self.assertEqual(fundamentals.caveats("Software - Application", "USD", {"fcf_yield_pct": 3}), [])
         notes = fundamentals.caveats("Airlines", "TRY", {"fcf_yield_pct": 41})
         self.assertEqual(len(notes), 3)
+
+
+class RealReturns(unittest.TestCase):
+    def test_try_usd_and_real(self):
+        # Over exactly one year the stock doubles in TRY, the lira halves against
+        # the dollar and consumer prices rise 50%.
+        idx = pd.bdate_range(end="2026-11-18", periods=400)
+        stock = pd.DataFrame({"Close": np.where(idx <= idx[-1] - pd.DateOffset(years=1), 100.0, 200.0)}, index=idx)
+        fx = pd.DataFrame({"Close": np.where(idx <= idx[-1] - pd.DateOffset(years=1), 20.0, 40.0)}, index=idx)
+        months = pd.period_range("2024-01", "2026-09", freq="M")
+        cpi = pd.Series(np.where(months <= pd.Period("2025-09", "M"), 100.0, 150.0), index=months)
+
+        def hist(sym, *a, **k):
+            return (fx if sym.endswith("=X") else stock), None
+
+        with Patch(prices, "load_history", hist), Patch(bis, "cpi_index", lambda c: cpi):
+            r = returns.real_returns("TEST", "BIST")
+        self.assertEqual(r["1y"]["try_pct"], 100.0)
+        self.assertEqual(r["1y"]["usd_pct"], 0.0)
+        self.assertEqual(r["1y"]["inflation_pct"], 50.0)
+        self.assertEqual(r["1y"]["real_pct"], 33.33)
+        self.assertEqual(r["inflation_lag_months"], 2)
+        self.assertNotIn("3y_annualized", r)  # not enough history
+
+    def test_missing_cpi_still_gives_nominal(self):
+        stock = frame(np.linspace(100, 200, 300))
+
+        def no_cpi(country):
+            raise DeskError("BIS down")
+
+        with Patch(prices, "load_history", lambda *a, **k: (stock, None)), Patch(bis, "cpi_index", no_cpi):
+            r = returns.real_returns("TEST", "US")
+        self.assertIn("usd_pct", r["1y"])
+        self.assertNotIn("real_pct", r["1y"])
+
+
+class Verification(unittest.TestCase):
+    FACTS = {
+        "Revenues": {"units": {"USD": [
+            {"start": "2024-01-01", "end": "2024-12-31", "val": 1000e6, "form": "10-K", "filed": "2025-02-01"},
+            {"start": "2024-01-01", "end": "2024-12-31", "val": 1010e6, "form": "10-K", "filed": "2026-02-01"},
+            {"start": "2024-10-01", "end": "2024-12-31", "val": 300e6, "form": "10-K", "filed": "2025-02-01"},
+            {"start": "2024-01-01", "end": "2024-12-31", "val": 999e6, "form": "8-K", "filed": "2025-03-01"},
+        ]}},
+    }
+
+    def test_annual_values_keep_latest_filing_and_skip_quarters(self):
+        out = verify._annual(self.FACTS, ["Revenues"], instant=False)
+        self.assertEqual(out, {"2024-12-31": 1010e6})
+
+    def test_nearest_date(self):
+        self.assertEqual(verify._nearest({"2026-01-25": 5}, "2026-01-31"), 5)
+        self.assertIsNone(verify._nearest({"2025-12-31": 5}, "2026-06-30"))
+
+    def test_check_counts_matches_and_differences(self):
+        sec_data = {"Total Revenue": {"2025-12-31": 1000e6}, "Net Income": {"2025-12-31": 100e6},
+                    "Diluted EPS": {"2025-12-31": 1.5}}
+        stmts = {"2025-12-31": {"Total Revenue": 1005.0, "Net Income": 120.0, "Diluted EPS": 1.5}}
+        with Patch(verify, "sec_annuals", lambda t: sec_data):
+            r = verify.check("TEST", stmts)
+        self.assertEqual(r["matched"], "2/3")
+        self.assertEqual(r["confidence"], "low")
+        self.assertEqual(r["differences"][0]["item"], "Net Income")
+        self.assertEqual(r["differences"][0]["diff_pct"], 20.0)
+
+    def test_sec_failure_is_reported_not_raised(self):
+        def boom(t):
+            raise DeskError("no user agent")
+
+        with Patch(verify, "sec_annuals", boom):
+            self.assertEqual(verify.check("X", {})["status"], "not checked")
 
 
 class Errors(unittest.TestCase):

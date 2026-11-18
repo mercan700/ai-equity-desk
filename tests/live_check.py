@@ -102,12 +102,23 @@ def main():
             print(f"        {i}")
     if not only:
         print("-- macro, global, filings, error paths")
-        for args in (["macro"], ["global"]):
+        for args in (["macro"], ["global"], ["macro", "--market", "BIST"]):
             res, _ = call(DESK, *args)
             bad = [k for k, v in res.items() if isinstance(v, dict) and "error" in v]
             failures += bool(bad) or "error" in res
-            print(f"{'ok ' if not bad and 'error' not in res else 'BAD'} {args[0]}: {len(res)} series, failed: {bad}")
+            print(f"{'ok ' if not bad and 'error' not in res else 'BAD'} {' '.join(args)}: {len(res)} items, failed: {bad}")
+        for t, market in (("THYAO", "BIST"), ("AAPL", "US")):
+            res, _ = call(DESK, "returns", t, "--market", market)
+            one = res.get("1y", {})
+            good = "error" not in res and "real_pct" in one
+            failures += not good
+            print(f"{'ok ' if good else 'BAD'} returns {t}: {one}")
         if os.environ.get("DESK_SEC_USER_AGENT"):
+            for t in ("AAPL", "MSFT", "KO", "PG", "V"):
+                res, _ = call(DESK, "verify", t)
+                good = res.get("status") == "checked" and res.get("confidence") != "low"
+                failures += not good
+                print(f"{'ok ' if good else 'BAD'} verify {t}: {res.get('matched')} {res.get('confidence')} {res.get('differences') or res.get('reason', '')}"[:200])
             res, _ = call(DESK, "filings", "BRK.B", "--forms", "10-K", "--limit", "1")
             failures += "error" in res
             print(f"{'ok ' if 'error' not in res else 'BAD'} filings BRK.B: {res.get('filings', res)}"[:200])

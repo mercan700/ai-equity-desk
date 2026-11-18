@@ -7,7 +7,10 @@
   desk.py profile NVDA
   desk.py financials NVDA [--quarterly] [--periods 4]
   desk.py filings AAPL [--forms 10-K 8-K] [--limit 10]
+  desk.py returns THYAO --market BIST
+  desk.py verify AAPL
   desk.py macro [DGS10 CPIAUCSL ...]
+  desk.py macro --market BIST
   desk.py global
 """
 import argparse
@@ -16,8 +19,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from deskcore import config, macro, prices, sec  # noqa: E402
+from deskcore import config, macro, prices, returns, sec, verify  # noqa: E402
 from deskcore.cli import run  # noqa: E402
+
+
+def verify_ticker(ticker):
+    fin = prices.financials(ticker, "US", periods=2)
+    return {"symbol": fin["symbol"], **verify.check(ticker, fin["statements"])}
 
 
 def main(argv=None):
@@ -41,12 +49,16 @@ def main(argv=None):
     f = with_ticker("financials", "key statement lines and ratios")
     f.add_argument("--quarterly", action="store_true")
     f.add_argument("--periods", type=int, default=4)
+    with_ticker("returns", "returns in local currency, USD and after inflation")
+    vf = sub.add_parser("verify", help="check Yahoo statements against SEC filings (US only)")
+    vf.add_argument("ticker")
     fl = sub.add_parser("filings", help="SEC filings list (US only)")
     fl.add_argument("ticker")
     fl.add_argument("--forms", nargs="*", default=["10-K", "10-Q", "8-K"])
     fl.add_argument("--limit", type=int, default=10)
-    m = sub.add_parser("macro", help="FRED macro snapshot")
+    m = sub.add_parser("macro", help="US macro from FRED, or Turkey with --market BIST")
     m.add_argument("codes", nargs="*")
+    m.add_argument("--market", default="US")
     sub.add_parser("global", help="world markets snapshot")
 
     a = p.parse_args(argv)
@@ -56,7 +68,9 @@ def main(argv=None):
         "profile": lambda: prices.profile(a.ticker, a.market, a.summary_chars),
         "financials": lambda: prices.financials(a.ticker, a.market, a.quarterly, a.periods),
         "filings": lambda: sec.filings(a.ticker, a.forms, a.limit),
-        "macro": lambda: macro.snapshot(a.codes),
+        "returns": lambda: returns.real_returns(a.ticker, a.market),
+        "verify": lambda: verify_ticker(a.ticker),
+        "macro": lambda: macro.turkey() if a.market.upper() == "BIST" else macro.snapshot(a.codes),
         "global": prices.global_snapshot,
     }
     return run(commands[a.cmd], a.pretty)

@@ -9,7 +9,7 @@ A set of Claude skills for researching listed companies with free data. The scri
 | Skill | Status | What it does |
 |---|---|---|
 | `desk-setup` | available | Checks Python, installs packages, tests each data source |
-| `desk-data` | available | Prices, history, profile, statements, SEC filings, FRED macro, world markets |
+| `desk-data` | available | Prices, returns after inflation and in dollars, statements cross-checked with SEC filings, US and Turkish macro, world markets |
 | `fundamentals` | available | Grades growth, profitability, cash conversion and balance sheet; compares valuation with peers |
 | `technicals` | available | Trend, RSI, MACD, volatility, support and resistance, performance against the index |
 | `company-story` | planned | History, business model and turning points, read from annual reports |
@@ -19,7 +19,12 @@ A set of Claude skills for researching listed companies with free data. The scri
 
 ## Markets
 
-US stocks are fully supported. Borsa Istanbul (`--market BIST`) supports prices, statements and the fundamentals and technicals skills; KAP filings and Turkish macro data are planned.
+US stocks are fully supported. Borsa Istanbul (`--market BIST`) supports prices, statements, Turkish inflation and policy rate, and the fundamentals and technicals skills. KAP filings are planned.
+
+Two features deal with the weak spots of free data:
+
+- Statement figures for US companies are compared with what the company filed with the SEC, and every analysis says how many matched.
+- Returns are shown in local currency, in US dollars and after inflation. For a Turkish stock the lira return alone mostly measures inflation: in the year to November 2026 Turkish Airlines rose 21% in lira, 2% in dollars, and fell about 7% after inflation.
 
 Some cases the fundamentals script handles explicitly:
 
@@ -44,7 +49,9 @@ Then ask Claude to "set up the equity desk".
 |---|---|---|
 | [yfinance](https://github.com/ranaroussi/yfinance) (Yahoo Finance, unofficial) | prices, profiles, statements | none |
 | [SEC EDGAR](https://www.sec.gov/edgar) | US filings | none; SEC asks for a contact User-Agent |
+| [SEC XBRL company facts](https://www.sec.gov/edgar/sec-api-documentation) | 10-K figures for cross-checks | none |
 | [FRED](https://fred.stlouisfed.org) | US macro series | none |
+| [BIS data portal](https://data.bis.org) | consumer prices and policy rates by country | none |
 
 yfinance is not affiliated with Yahoo. Yahoo's terms allow personal use of its data; check them before using the desk for anything else.
 

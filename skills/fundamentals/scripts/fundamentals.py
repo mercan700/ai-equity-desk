@@ -17,7 +17,7 @@ from datetime import date
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "desk-data", "scripts"))
 
 from deskcore.cli import friendly_error, run  # noqa: E402
-from deskcore import DeskError, config, prices  # noqa: E402
+from deskcore import DeskError, config, markets, prices, verify  # noqa: E402
 from deskcore.prices import _num, _pct  # noqa: E402
 
 # Lenders and insurers, where margins, free cash flow and net debt do not mean what they
@@ -212,6 +212,7 @@ def compare(target, peers):
 
 def with_peers(ticker, market, peers):
     out = analyze(ticker, market)
+    out["verification"] = verification(ticker, market)
     if not peers:
         return out
     peer_data, failed = [], {}
@@ -224,6 +225,17 @@ def with_peers(ticker, market, peers):
     if failed:
         out["peer_comparison"]["failed"] = failed
     return out
+
+
+def verification(ticker, market):
+    """Cross-check the target's statements with SEC filings. Never fails the report."""
+    if markets.get(market)[0] != "US":
+        return {"status": "not checked", "reason": "cross-checks cover US 10-K filers; BIST (KAP) is not supported yet"}
+    try:
+        fin = prices.financials(ticker, market, periods=2)
+        return verify.check(ticker, fin["statements"])
+    except Exception as e:  # noqa: BLE001
+        return {"status": "not checked", "reason": friendly_error(e)}
 
 
 def main():

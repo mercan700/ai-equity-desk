@@ -17,8 +17,8 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "desk-data", "scripts"))
 
-from deskcore.cli import run  # noqa: E402
-from deskcore import DeskError, config, markets, prices  # noqa: E402
+from deskcore.cli import friendly_error, run  # noqa: E402
+from deskcore import DeskError, config, markets, prices, returns  # noqa: E402
 from deskcore.prices import _num, _pct  # noqa: E402
 
 
@@ -114,6 +114,12 @@ def analyze(ticker, market="US"):
     except Exception as e:  # noqa: BLE001 - the rest of the analysis is still useful
         rel["error"] = f"benchmark unavailable: {e}"
 
+    try:
+        ret = returns.real_returns(ticker, mkt)
+        ret = {k: v for k, v in ret.items() if k not in ("symbol", "end", "note")}
+    except Exception as e:  # noqa: BLE001 - the chart reading is still useful without it
+        ret = {"error": friendly_error(e)}
+
     vol20, vol60 = float(df["Volume"].tail(20).mean()), float(df["Volume"].tail(60).mean())
     return {
         "symbol": sym, "date": str(c.index[-1].date()), "close": _num(last),
@@ -142,6 +148,7 @@ def analyze(ticker, market="US"):
         },
         "volume": {"avg20_vs_avg60_pct": _pct(vol20, vol60)},
         "relative_strength_vs_benchmark_pp": rel,
+        "returns": ret,
     }
 
 

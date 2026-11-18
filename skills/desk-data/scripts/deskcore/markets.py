@@ -1,15 +1,16 @@
 """Market adapters. A market added here is available to every skill.
 
-US: prices, statements, SEC filings and FRED macro.
-BIST: prices and statements. KAP filings and Turkish macro are not wired up yet.
+US: prices, statements, SEC filings and cross-checks, FRED macro.
+BIST: prices, statements, Turkish inflation and policy rate from BIS. KAP filings
+are not wired up yet.
 """
 import re
 
 from . import DeskError
 
 MARKETS = {
-    "US": {"suffix": "", "currency": "USD", "benchmark": "^GSPC", "filings": "sec"},
-    "BIST": {"suffix": ".IS", "currency": "TRY", "benchmark": "XU100.IS", "filings": None},
+    "US": {"suffix": "", "currency": "USD", "country": "US", "benchmark": "^GSPC", "filings": "sec"},
+    "BIST": {"suffix": ".IS", "currency": "TRY", "country": "TR", "benchmark": "XU100.IS", "filings": None},
 }
 
 
